@@ -8,6 +8,28 @@ A single-file ABAP report that gives SAP Basis administrators in **SAP Private C
 
 In SAP Private Cloud (RISE/HEC) environments, admins typically cannot SSH to the application server. Everyday tasks — inspecting directories, moving transports, checking certificate expiry, reading profile parameters, running a `ping` against a managed service — require workarounds through SM49, AL11, STRUST, RZ10, and friends. The Basis Toolbox consolidates the most common of these into a single report with a unified selection-screen UI, proper authorization gating, and an audit trail.
 
+## Screenshots
+
+**Main Menu** — system info header plus one-click entry to each module:
+
+![Main Menu](docs/screenshots/Main_Menu.png)
+
+**File Manager** — ALV-based directory browser with toolbar actions (upload, download, copy, rename, delete, create dir, ZIP download):
+
+![File Manager](docs/screenshots/File_Manager.png)
+
+**Network Diagnostics** — `ping` / `nslookup` / `traceroute` / `curl` against a hostname or URL:
+
+![Network Diagnostics](docs/screenshots/Network_Diagonstics.png)
+
+**Profile Parameters** — filter-enabled browser over `DEFAULT.PFL` and the active instance profile:
+
+![Profile Parameters](docs/screenshots/Profile_Parameters.png)
+
+**System Information** — system ID, client, release, DB host, kernel, IP, disk usage:
+
+![System Information](docs/screenshots/System_Information.png)
+
 ## Features
 
 Nine modules, all reachable from one main menu:
