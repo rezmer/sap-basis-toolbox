@@ -79,13 +79,111 @@ CONSTANTS:
 
 ## Roles
 
-Three self-contained PFCG roles — each includes the standard `S_PROGRAM`, `S_C_FUNCT`, `S_DATASET`, and `S_GUI` auths. No separate starter role.
+Three self-contained PFCG roles. Each role **must** carry the standard SAP authorizations required to start the report and use its OS-level features — there is no separate starter role. The custom `Z_BASTOOL` object varies per role; the standard objects are identical across all three (only the values differ slightly for USER vs. ADMIN/DEBUG).
 
-| Role | `Z_BASTOOL` | Notes |
+| Role | `Z_BASTOOL` | Summary |
 |---|---|---|
 | `Z_BASIS_TOOL_USER`  | `MODL ∈ {FM,TRD,TRU,NET,CRT,GRP,PRF,SYS}`, `ACTN=01` | Read/display only. **No** ZIP Upload, **no** Curl |
 | `Z_BASIS_TOOL_ADMIN` | `MODL=*`, `ACTN ∈ {01,02}` | Full read + write. On PRD: no FM write except empty-dir delete, no ZIP Upload, no Transport Upload |
 | `Z_BASIS_TOOL_DEBUG` | `MODL=*`, `ACTN ∈ {01,02,99}` | Emergency bypass — **no auditing**, PRD restrictions lifted. Use sparingly |
+
+### Standard SAP Authorizations (PFCG values)
+
+The following four standard objects must be maintained in every role. Values below are the minimum this report actually checks — adjust to your audit rules as needed.
+
+#### `S_PROGRAM` — Program Execution
+
+Needed to start the report via `SE38` / `SA38` / transaction code.
+
+| Field | Value | Comment |
+|---|---|---|
+| `P_ACTION`  | `SUBMIT` | Interactive execution. Add `BTCSUBMIT` if scheduling in SM36 |
+| `P_GROUP`   | *Auth group of `Z_BASIS_TOOLBOX`* (e.g. `ZBAS`) or `*` | Best practice: assign the report to a dedicated authorization group in its SE38 attributes, then name it here |
+
+**Same values in all three roles.**
+
+#### `S_C_FUNCT` — `CALL 'SYSTEM'` Kernel Calls
+
+Required because the report uses `CALL 'SYSTEM'` for `ping`, `nslookup`, `traceroute`, `curl`, `df -h`, `hostname -i`, `mkdir`, `rmdir`. Without this object the OS-diagnostic modules fail.
+
+| Field | Value | Comment |
+|---|---|---|
+| `CFUNCNAME` | `SYSTEM`           | The kernel function being called |
+| `ACTVT`     | `16`               | Execute |
+| `PROGRAM`   | `Z_BASIS_TOOLBOX`  | Name of the calling ABAP program |
+
+**Same values in all three roles.**
+
+#### `S_DATASET` — Application-Server File I/O
+
+Required because the report uses `OPEN DATASET` / `DELETE DATASET`. The activities differ between USER and ADMIN.
+
+| Field | USER | ADMIN / DEBUG | Comment |
+|---|---|---|---|
+| `ACTVT`     | `33` (Read) | `33`, `34`, `06`, `A6` | 33=Read, 34=Write, 06=Delete, A6=Read with filter |
+| `PROGRAM`   | `Z_BASIS_TOOLBOX` | `Z_BASIS_TOOLBOX` | Calling program |
+| `FILENAME`  | `*` or whitelist (e.g. `/usr/sap/*`, `/tmp/*`) | `*` or whitelist | Narrow this in audit-sensitive environments |
+
+> **Audit tip:** restricting `FILENAME` to a directory whitelist (`/usr/sap/*`, `/usr/sap/trans/*`, `/tmp/*`) is the single biggest hardening step if your auditor pushes back on `FILENAME = *`.
+
+#### `S_GUI` — SAP GUI Front-End Operations
+
+Required for upload/download dialogs and clipboard interactions initiated by the report.
+
+| Field | USER | ADMIN / DEBUG | Comment |
+|---|---|---|---|
+| `ACTVT` | `61` (Download) | `02`, `60`, `61` | 02=Change/Clipboard, 60=Upload, 61=Download |
+
+USER needs only Download (Transport Download, file download, ZIP download). ADMIN/DEBUG additionally need Upload (Transport Upload, file upload, ZIP upload).
+
+### Role Summary (PFCG copy-paste cheat sheet)
+
+**`Z_BASIS_TOOL_USER`**
+```
+S_PROGRAM   P_ACTION = SUBMIT
+            P_GROUP  = <auth group of Z_BASIS_TOOLBOX>
+S_C_FUNCT   CFUNCNAME = SYSTEM
+            ACTVT     = 16
+            PROGRAM   = Z_BASIS_TOOLBOX
+S_DATASET   ACTVT    = 33
+            PROGRAM  = Z_BASIS_TOOLBOX
+            FILENAME = *
+S_GUI       ACTVT = 61
+Z_BASTOOL   ZBAS_MODL = FM, TRD, TRU, NET, CRT, GRP, PRF, SYS
+            ZBAS_ACTN = 01
+```
+
+**`Z_BASIS_TOOL_ADMIN`**
+```
+S_PROGRAM   P_ACTION = SUBMIT
+            P_GROUP  = <auth group of Z_BASIS_TOOLBOX>
+S_C_FUNCT   CFUNCNAME = SYSTEM
+            ACTVT     = 16
+            PROGRAM   = Z_BASIS_TOOLBOX
+S_DATASET   ACTVT    = 33, 34, 06, A6
+            PROGRAM  = Z_BASIS_TOOLBOX
+            FILENAME = *
+S_GUI       ACTVT = 02, 60, 61
+Z_BASTOOL   ZBAS_MODL = *
+            ZBAS_ACTN = 01, 02
+```
+
+**`Z_BASIS_TOOL_DEBUG`**
+```
+S_PROGRAM   P_ACTION = SUBMIT
+            P_GROUP  = <auth group of Z_BASIS_TOOLBOX>
+S_C_FUNCT   CFUNCNAME = SYSTEM
+            ACTVT     = 16
+            PROGRAM   = Z_BASIS_TOOLBOX
+S_DATASET   ACTVT    = 33, 34, 06, A6
+            PROGRAM  = Z_BASIS_TOOLBOX
+            FILENAME = *
+S_GUI       ACTVT = 02, 60, 61
+Z_BASTOOL   ZBAS_MODL = *
+            ZBAS_ACTN = 01, 02, 99
+```
+
+> After any change to a PFCG role: **Generate profile** and run **User comparison**.
 
 ### Activity Matrix
 
