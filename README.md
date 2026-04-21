@@ -140,6 +140,8 @@ USER needs only Download (Transport Download, file download, ZIP download). ADMI
 
 **`Z_BASIS_TOOL_USER`**
 ```
+Description: Z_BASIS_TOOLBOX - Display/Read-only access (no writes, no curl, no ZIP upload)
+
 S_PROGRAM   P_ACTION = SUBMIT
             P_GROUP  = <auth group of Z_BASIS_TOOLBOX>
 S_C_FUNCT   CFUNCNAME = SYSTEM
@@ -155,6 +157,8 @@ Z_BASTOOL   ZBAS_MODL = FM, TRD, TRU, NET, CRT, GRP, PRF, SYS
 
 **`Z_BASIS_TOOL_ADMIN`**
 ```
+Description: Z_BASIS_TOOLBOX - Full admin access (writes blocked on PRD except empty-dir delete)
+
 S_PROGRAM   P_ACTION = SUBMIT
             P_GROUP  = <auth group of Z_BASIS_TOOLBOX>
 S_C_FUNCT   CFUNCNAME = SYSTEM
@@ -170,6 +174,8 @@ Z_BASTOOL   ZBAS_MODL = *
 
 **`Z_BASIS_TOOL_DEBUG`**
 ```
+Description: Z_BASIS_TOOLBOX - Emergency bypass role (no auditing, PRD restrictions lifted)
+
 S_PROGRAM   P_ACTION = SUBMIT
             P_GROUP  = <auth group of Z_BASIS_TOOLBOX>
 S_C_FUNCT   CFUNCNAME = SYSTEM
