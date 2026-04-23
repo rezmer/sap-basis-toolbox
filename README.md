@@ -39,7 +39,7 @@ Nine modules, all reachable from one main menu:
 | **File Manager** | Browse directories (ALV grid), upload, download, copy, rename, delete, create directories, download folders as ZIP, Back/Forward navigation |
 | **Upload ZIP** | Extract a ZIP flat into a server directory |
 | **Transport Download** | Pull `K*` / `R*` transport files from the server to the frontend |
-| **Transport Upload** | Push up to 4 transports (Co-File + Data-File) from the frontend to the server |
+| **Transport Upload** | Push up to 4 transports (Co-File + Data-File) from the frontend to the server, with K↔R sibling auto-fill and optional *Add to STMS import buffer* |
 | **Grep** | Recursive text search with filename filter, ALV result list with hotspot jump |
 | **Network Diagnostics** | `ping`, `nslookup`, `traceroute`, `curl` against a hostname/URL |
 | **Certificate Checker** | Scans `<DIR_INSTANCE>/sec/*.pse` and displays expiry status with traffic-light icons |
@@ -172,6 +172,8 @@ Z_BASTOOL   ZBAS_MODL = *
             ZBAS_ACTN = 01, 02
 ```
 
+> **Optional for Transport Upload "Add to STMS Buffer":** if admins should be able to use the new checkbox that adds the uploaded transport to the local STMS import queue, add `S_CTS_ADMI` with `CTS_ADMFCT = IMPS` (Import Scheduling). Without it, the upload itself still works, but the buffer add fails with a W-severity audit entry.
+
 **`Z_BASIS_TOOL_DEBUG`**
 ```
 Description: Z_BASIS_TOOLBOX - Emergency bypass role (no auditing, PRD restrictions lifted)
@@ -205,6 +207,15 @@ Z_BASTOOL   ZBAS_MODL = *
 | Network (ping/nslookup/traceroute) | ✅ | ✅ | ✅ | ✅ |
 | Network Curl | ❌ | ✅ | ✅ | ✅ |
 | Grep / Certificates / Profile / System Info | ✅ | ✅ | ✅ | ✅ |
+
+### Known Behaviors
+
+- **FM Delete File on PRD** is blocked per-item. The summary message explicitly names how many items were blocked on the productive system vs. how many failed for other reasons (e.g. non-empty folder).
+- **FM Delete empty Directory on PRD** is **allowed**. Removing an empty folder is non-destructive (no data loss) and occasionally needed after a failed op.
+- **Transport Upload — K ↔ R auto-fill:** picking a `K*` file in the file dialog tries to locate the matching `R*` sibling in the same directory and populates the R-field automatically (and vice-versa). If the sibling is missing, the other field stays empty — no error.
+- **Transport Upload — Add to STMS Buffer:** after a successful upload on a non-PRD system, the checkbox *"Add to STMS import buffer of `<SID>/<MANDT>`"* forwards each detected transport (parsed from the `K<num>.<SID>` filename) to the local STMS import queue via `TMS_MGR_FORWARD_TR_REQUEST`. Requires `S_CTS_ADMI / CTS_ADMFCT = IMPS`. Each forward is logged separately as `STMS_BUFFER_ADD` (severity `W`).
+- **Debug mode — startup popup** offers three choices: *Continue (with Audit)* / *Continue (no Audit)* / *Abort*. "With Audit" writes a severity-`C` `DEBUG_MODE_START` entry (requires `ZBAS_TOOL_LOG` to exist). "No Audit" requires a second confirmation and disables all audit writes for the session. Debug mode is activated either by the compile-time flag `c_debug_mode = 'X'` or by the role `Z_BASIS_TOOL_DEBUG` (`ZBAS_ACTN = 99`) at runtime.
+- **Certificate Checker** dynamically enumerates `*.pse` files in `<DIR_INSTANCE>/sec/` (via `RZL_READ_DIR_LOCAL`) rather than relying on a hard-coded list. If none are found you get a precise message — "no PSE files present" vs. "PSE files found but cannot be read" vs. an auth-check failure.
 
 ## DDIC Objects
 

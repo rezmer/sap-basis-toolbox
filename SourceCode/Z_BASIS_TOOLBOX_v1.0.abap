@@ -161,7 +161,8 @@ CONSTANTS: c_audit_non_prd TYPE abap_bool VALUE abap_false,  " 'X' = write audit
 DATA: gv_is_prd       TYPE abap_bool VALUE abap_false,
       gv_auth_ok      TYPE abap_bool,
       gv_fm_write     TYPE abap_bool VALUE abap_false,
-      gv_debug_active TYPE abap_bool VALUE abap_false.
+      gv_debug_active TYPE abap_bool VALUE abap_false,
+      gv_debug_audit  TYPE abap_bool VALUE abap_false.  " Debug mode: audit still enabled?
 
 * Security Layer: Button -> Module map used by INIT (startup check) and PBO (button graying)
 TYPES: BEGIN OF ty_btn_auth,
@@ -270,43 +271,97 @@ SELECTION-SCREEN END OF BLOCK b_fm.
 
 SELECTION-SCREEN BEGIN OF BLOCK b_zup WITH FRAME TITLE tit_zup.
   SELECTION-SCREEN COMMENT /1(79) txt_zu1 MODIF ID zup.
-  PARAMETERS: p_zu_fil TYPE string LOWER CASE MODIF ID zup.
-  PARAMETERS: p_zu_dir TYPE string LOWER CASE MODIF ID zup DEFAULT '/tmp/'.
+  SELECTION-SCREEN BEGIN OF LINE.
+    SELECTION-SCREEN COMMENT 1(25) lbl_zuf MODIF ID zup.
+    PARAMETERS: p_zu_fil TYPE string LOWER CASE MODIF ID zup.
+  SELECTION-SCREEN END OF LINE.
+  SELECTION-SCREEN BEGIN OF LINE.
+    SELECTION-SCREEN COMMENT 1(25) lbl_zud MODIF ID zup.
+    PARAMETERS: p_zu_dir TYPE string LOWER CASE MODIF ID zup DEFAULT '/tmp/'.
+  SELECTION-SCREEN END OF LINE.
 SELECTION-SCREEN END OF BLOCK b_zup.
 
 SELECTION-SCREEN BEGIN OF BLOCK b_trd WITH FRAME TITLE tit_trd.
   SELECTION-SCREEN COMMENT /1(79) txt_tr1 MODIF ID trd.
-  PARAMETERS: p_tr_id  TYPE string MODIF ID trd.
-  PARAMETERS: p_tr_dir TYPE string LOWER CASE MODIF ID trd DEFAULT '/usr/sap/trans/'.
+  SELECTION-SCREEN BEGIN OF LINE.
+    SELECTION-SCREEN COMMENT 1(25) lbl_tid MODIF ID trd.
+    PARAMETERS: p_tr_id  TYPE string MODIF ID trd.
+  SELECTION-SCREEN END OF LINE.
+  SELECTION-SCREEN BEGIN OF LINE.
+    SELECTION-SCREEN COMMENT 1(25) lbl_tsd MODIF ID trd.
+    PARAMETERS: p_tr_dir TYPE string LOWER CASE MODIF ID trd DEFAULT '/usr/sap/trans/'.
+  SELECTION-SCREEN END OF LINE.
 SELECTION-SCREEN END OF BLOCK b_trd.
 
 SELECTION-SCREEN BEGIN OF BLOCK b_tru WITH FRAME TITLE tit_tru.
   SELECTION-SCREEN COMMENT /1(79) txt_tu1 MODIF ID tru.
-  PARAMETERS: p_tru_td TYPE string LOWER CASE MODIF ID tru DEFAULT '/usr/sap/trans/'.
+  SELECTION-SCREEN BEGIN OF LINE.
+    SELECTION-SCREEN COMMENT 1(25) lbl_ttd MODIF ID tru.
+    PARAMETERS: p_tru_td TYPE string LOWER CASE MODIF ID tru DEFAULT '/usr/sap/trans/'.
+  SELECTION-SCREEN END OF LINE.
   SELECTION-SCREEN SKIP 1.
   " Transport 1
   SELECTION-SCREEN COMMENT /1(30) lbl_t1 MODIF ID tru.
-  PARAMETERS: p_tru_k1 TYPE string LOWER CASE MODIF ID tru.
-  PARAMETERS: p_tru_r1 TYPE string LOWER CASE MODIF ID tru.
+  SELECTION-SCREEN BEGIN OF LINE.
+    SELECTION-SCREEN COMMENT 1(25) lbl_tk1 MODIF ID tru.
+    PARAMETERS: p_tru_k1 TYPE string LOWER CASE MODIF ID tru.
+  SELECTION-SCREEN END OF LINE.
+  SELECTION-SCREEN BEGIN OF LINE.
+    SELECTION-SCREEN COMMENT 1(25) lbl_tr1 MODIF ID tru.
+    PARAMETERS: p_tru_r1 TYPE string LOWER CASE MODIF ID tru.
+  SELECTION-SCREEN END OF LINE.
   " Transport 2
   SELECTION-SCREEN COMMENT /1(30) lbl_t2 MODIF ID tru.
-  PARAMETERS: p_tru_k2 TYPE string LOWER CASE MODIF ID tru.
-  PARAMETERS: p_tru_r2 TYPE string LOWER CASE MODIF ID tru.
+  SELECTION-SCREEN BEGIN OF LINE.
+    SELECTION-SCREEN COMMENT 1(25) lbl_tk2 MODIF ID tru.
+    PARAMETERS: p_tru_k2 TYPE string LOWER CASE MODIF ID tru.
+  SELECTION-SCREEN END OF LINE.
+  SELECTION-SCREEN BEGIN OF LINE.
+    SELECTION-SCREEN COMMENT 1(25) lbl_tr2 MODIF ID tru.
+    PARAMETERS: p_tru_r2 TYPE string LOWER CASE MODIF ID tru.
+  SELECTION-SCREEN END OF LINE.
   " Transport 3
   SELECTION-SCREEN COMMENT /1(30) lbl_t3 MODIF ID tru.
-  PARAMETERS: p_tru_k3 TYPE string LOWER CASE MODIF ID tru.
-  PARAMETERS: p_tru_r3 TYPE string LOWER CASE MODIF ID tru.
+  SELECTION-SCREEN BEGIN OF LINE.
+    SELECTION-SCREEN COMMENT 1(25) lbl_tk3 MODIF ID tru.
+    PARAMETERS: p_tru_k3 TYPE string LOWER CASE MODIF ID tru.
+  SELECTION-SCREEN END OF LINE.
+  SELECTION-SCREEN BEGIN OF LINE.
+    SELECTION-SCREEN COMMENT 1(25) lbl_tr3 MODIF ID tru.
+    PARAMETERS: p_tru_r3 TYPE string LOWER CASE MODIF ID tru.
+  SELECTION-SCREEN END OF LINE.
   " Transport 4
   SELECTION-SCREEN COMMENT /1(30) lbl_t4 MODIF ID tru.
-  PARAMETERS: p_tru_k4 TYPE string LOWER CASE MODIF ID tru.
-  PARAMETERS: p_tru_r4 TYPE string LOWER CASE MODIF ID tru.
+  SELECTION-SCREEN BEGIN OF LINE.
+    SELECTION-SCREEN COMMENT 1(25) lbl_tk4 MODIF ID tru.
+    PARAMETERS: p_tru_k4 TYPE string LOWER CASE MODIF ID tru.
+  SELECTION-SCREEN END OF LINE.
+  SELECTION-SCREEN BEGIN OF LINE.
+    SELECTION-SCREEN COMMENT 1(25) lbl_tr4 MODIF ID tru.
+    PARAMETERS: p_tru_r4 TYPE string LOWER CASE MODIF ID tru.
+  SELECTION-SCREEN END OF LINE.
+  SELECTION-SCREEN SKIP 1.
+  " Add-to-STMS-buffer checkbox (see B3 in plan)
+  SELECTION-SCREEN BEGIN OF LINE.
+    PARAMETERS: p_tru_bf AS CHECKBOX DEFAULT abap_false MODIF ID tru.
+    SELECTION-SCREEN COMMENT 3(75) lbl_tbf FOR FIELD p_tru_bf MODIF ID tru.
+  SELECTION-SCREEN END OF LINE.
 SELECTION-SCREEN END OF BLOCK b_tru.
 
 SELECTION-SCREEN BEGIN OF BLOCK b_grp WITH FRAME TITLE tit_grp.
   SELECTION-SCREEN COMMENT /1(79) txt_g_1 MODIF ID grp.
-  PARAMETERS: p_g_dir TYPE string LOWER CASE MODIF ID grp DEFAULT '/usr/sap/trans/log/'.
-  PARAMETERS: p_g_msk TYPE string LOWER CASE MODIF ID grp DEFAULT '*'.
-  PARAMETERS: p_g_str TYPE string LOWER CASE MODIF ID grp.
+  SELECTION-SCREEN BEGIN OF LINE.
+    SELECTION-SCREEN COMMENT 1(25) lbl_gdr MODIF ID grp.
+    PARAMETERS: p_g_dir TYPE string LOWER CASE MODIF ID grp DEFAULT '/usr/sap/trans/log/'.
+  SELECTION-SCREEN END OF LINE.
+  SELECTION-SCREEN BEGIN OF LINE.
+    SELECTION-SCREEN COMMENT 1(25) lbl_gmk MODIF ID grp.
+    PARAMETERS: p_g_msk TYPE string LOWER CASE MODIF ID grp DEFAULT '*'.
+  SELECTION-SCREEN END OF LINE.
+  SELECTION-SCREEN BEGIN OF LINE.
+    SELECTION-SCREEN COMMENT 1(25) lbl_gst MODIF ID grp.
+    PARAMETERS: p_g_str TYPE string LOWER CASE MODIF ID grp.
+  SELECTION-SCREEN END OF LINE.
   SELECTION-SCREEN COMMENT /1(79) txt_g_2 MODIF ID grp.
 SELECTION-SCREEN END OF BLOCK b_grp.
 
@@ -378,6 +433,26 @@ INITIALIZATION.
   lbl_t3 = '--- Transport 3 ---'.
   lbl_t4 = '--- Transport 4 ---'.
 
+  " Inline parameter labels (plan B1)
+  lbl_zuf = 'ZIP file (PC):'.
+  lbl_zud = 'Target directory:'.
+  lbl_tid = 'Transport Request:'.
+  lbl_tsd = 'Source directory:'.
+  lbl_ttd = 'Target directory:'.
+  lbl_tk1 = 'Co-file (K...):'.
+  lbl_tr1 = 'Data-file (R...):'.
+  lbl_tk2 = 'Co-file (K...):'.
+  lbl_tr2 = 'Data-file (R...):'.
+  lbl_tk3 = 'Co-file (K...):'.
+  lbl_tr3 = 'Data-file (R...):'.
+  lbl_tk4 = 'Co-file (K...):'.
+  lbl_tr4 = 'Data-file (R...):'.
+  lbl_gdr = 'Directory:'.
+  lbl_gmk = 'File pattern:'.
+  lbl_gst = 'Search term:'.
+  " Dynamic label for Add-to-STMS-buffer checkbox (plan B3)
+  lbl_tbf = |Add to STMS import buffer of { sy-sysid }/{ sy-mandt } after upload|.
+
   btn_fm  = 'File Manager'.
   btn_zup = 'Upload Files (as ZIP)'.
   btn_trd = 'Transport Down'.
@@ -412,22 +487,72 @@ INITIALIZATION.
   ENDIF.
 
   IF gv_debug_active = abap_true.
-    DATA: lv_debug_ans TYPE c LENGTH 1.
-    CALL FUNCTION 'POPUP_TO_CONFIRM'
+    DATA: lv_debug_ans    TYPE c LENGTH 1,
+          lv_confirm_noau TYPE c LENGTH 1,
+          lv_dbg_origin   TYPE string,
+          lv_log_missing  TYPE abap_bool.
+
+    " 3-option popup: With Audit / No Audit / Abort
+    CALL FUNCTION 'POPUP_TO_DECIDE'
       EXPORTING
-        titlebar              = 'DEBUG Mode Active'
-        text_question         = 'DEBUG Mode! No Auditing - use at own risk!'
-        text_button_1         = 'Continue'
-        text_button_2         = 'Abort'
-        default_button        = '2'
-        display_cancel_button = abap_false
+        defaultoption  = '3'
+        textline1      = '>>> DEBUG MODE will be activated <<<'
+        textline2      = 'Auth checks and PRD restrictions are BYPASSED. Choose wisely.'
+        text_option1   = 'Continue (with Audit)'
+        text_option2   = 'Continue (no Audit)'
+        text_option3   = 'Abort'
+        titel          = '*** Z_BASIS_TOOLBOX - DEBUG MODE ***'
+        cancel_display = 'X'
       IMPORTING
-        answer                = lv_debug_ans
+        answer         = lv_debug_ans
       EXCEPTIONS
-        text_not_found        = 1
-        OTHERS                = 2.
-    IF lv_debug_ans = '2' OR lv_debug_ans = 'A'.
+        OTHERS         = 1.
+
+    " Abort (Option 3, cancel, or FM error)
+    IF lv_debug_ans = '3' OR lv_debug_ans = 'A' OR sy-subrc <> 0.
       LEAVE PROGRAM.
+    ENDIF.
+
+    " Option 1: Continue with Audit -> probe ZBAS_TOOL_LOG, enable audit, log start
+    IF lv_debug_ans = '1'.
+      TRY.
+          DATA lr_probe_log TYPE REF TO data.
+          CREATE DATA lr_probe_log TYPE ('ZBAS_TOOL_LOG').
+          lv_log_missing = abap_false.
+        CATCH cx_root.
+          lv_log_missing = abap_true.
+      ENDTRY.
+      IF lv_log_missing = abap_true.
+        MESSAGE 'ZBAS_TOOL_LOG not activated - "with Audit" is impossible on this system. Create the table or use "no Audit".' TYPE 'S' DISPLAY LIKE 'E'.
+        LEAVE PROGRAM.
+      ENDIF.
+      gv_debug_audit = abap_true.
+      IF c_debug_mode = abap_true.
+        lv_dbg_origin = 'Origin=c_debug_mode flag'.
+      ELSE.
+        lv_dbg_origin = 'Origin=Z_BASTOOL ACTN=99 role'.
+      ENDIF.
+      PERFORM write_audit_log USING c_mod_sys 'DEBUG_MODE_START' sy-uname lv_dbg_origin 'C'.
+    ENDIF.
+
+    " Option 2: Continue no Audit -> require explicit second confirmation
+    IF lv_debug_ans = '2'.
+      CALL FUNCTION 'POPUP_TO_CONFIRM'
+        EXPORTING
+          titlebar              = 'Disable audit - are you really sure?'
+          text_question         = 'ALL audit logging will be disabled, including deletes on PRD. This action itself will not be recorded. Continue?'
+          text_button_1         = 'Yes, disable audit'
+          text_button_2         = 'No, go back'
+          default_button        = '2'
+          display_cancel_button = abap_false
+        IMPORTING
+          answer                = lv_confirm_noau
+        EXCEPTIONS
+          OTHERS                = 1.
+      IF lv_confirm_noau <> '1'.
+        LEAVE PROGRAM.
+      ENDIF.
+      gv_debug_audit = abap_false.
     ENDIF.
   ENDIF.
 
@@ -687,28 +812,28 @@ AT SELECTION-SCREEN ON VALUE-REQUEST FOR p_zu_fil.
   PERFORM f4_file_open USING p_zu_fil 'X'.
 
 AT SELECTION-SCREEN ON VALUE-REQUEST FOR p_tru_k1.
-  PERFORM f4_file_open USING p_tru_k1 space.
+  PERFORM f4_tru_file CHANGING p_tru_k1 p_tru_r1.
 
 AT SELECTION-SCREEN ON VALUE-REQUEST FOR p_tru_r1.
-  PERFORM f4_file_open USING p_tru_r1 space.
+  PERFORM f4_tru_file CHANGING p_tru_r1 p_tru_k1.
 
 AT SELECTION-SCREEN ON VALUE-REQUEST FOR p_tru_k2.
-  PERFORM f4_file_open USING p_tru_k2 space.
+  PERFORM f4_tru_file CHANGING p_tru_k2 p_tru_r2.
 
 AT SELECTION-SCREEN ON VALUE-REQUEST FOR p_tru_r2.
-  PERFORM f4_file_open USING p_tru_r2 space.
+  PERFORM f4_tru_file CHANGING p_tru_r2 p_tru_k2.
 
 AT SELECTION-SCREEN ON VALUE-REQUEST FOR p_tru_k3.
-  PERFORM f4_file_open USING p_tru_k3 space.
+  PERFORM f4_tru_file CHANGING p_tru_k3 p_tru_r3.
 
 AT SELECTION-SCREEN ON VALUE-REQUEST FOR p_tru_r3.
-  PERFORM f4_file_open USING p_tru_r3 space.
+  PERFORM f4_tru_file CHANGING p_tru_r3 p_tru_k3.
 
 AT SELECTION-SCREEN ON VALUE-REQUEST FOR p_tru_k4.
-  PERFORM f4_file_open USING p_tru_k4 space.
+  PERFORM f4_tru_file CHANGING p_tru_k4 p_tru_r4.
 
 AT SELECTION-SCREEN ON VALUE-REQUEST FOR p_tru_r4.
-  PERFORM f4_file_open USING p_tru_r4 space.
+  PERFORM f4_tru_file CHANGING p_tru_r4 p_tru_k4.
 
 START-OF-SELECTION.
   " Empty
@@ -1553,7 +1678,8 @@ FORM delete_selected.
         lv_ans  TYPE c,
         lv_count TYPE i,
         lv_count_before TYPE i,
-        lv_error_count TYPE i.
+        lv_error_count TYPE i,
+        lv_prd_blocked TYPE i.
 
   " Get selected rows
   CALL METHOD go_grid->get_selected_rows
@@ -1586,7 +1712,7 @@ FORM delete_selected.
       IF ls_file-type = 'FILE'.
         " Security: Block file deletion on PRD (empty-dir delete still allowed below)
         IF gv_is_prd = abap_true AND gv_debug_active = abap_false.
-          ADD 1 TO lv_error_count.
+          ADD 1 TO lv_prd_blocked.
           PERFORM write_audit_log USING c_mod_fm 'FILE_DELETE_BLOCKED_PRD' ls_file-abspath ls_file-name 'C'.
           CONTINUE.
         ENDIF.
@@ -1612,7 +1738,11 @@ FORM delete_selected.
     ENDIF.
   ENDLOOP.
 
-  IF lv_error_count > 0.
+  IF lv_prd_blocked > 0 AND lv_error_count > 0.
+    MESSAGE |Deleted { lv_count } item(s). { lv_prd_blocked } blocked on productive system. { lv_error_count } other failure(s) (folders must be empty).| TYPE 'S' DISPLAY LIKE 'W'.
+  ELSEIF lv_prd_blocked > 0.
+    MESSAGE |Deleted { lv_count } item(s). { lv_prd_blocked } file(s) blocked on productive system.| TYPE 'S' DISPLAY LIKE 'W'.
+  ELSEIF lv_error_count > 0.
     MESSAGE |Deleted { lv_count } item(s). { lv_error_count } failed (folders must be empty).| TYPE 'S' DISPLAY LIKE 'W'.
   ELSE.
     MESSAGE |Deleted { lv_count } item(s).| TYPE 'S'.
@@ -2623,29 +2753,169 @@ FORM execute_trans_upload.
     MESSAGE 'Transport upload is blocked on productive systems. Use TMS/CTS.' TYPE 'S' DISPLAY LIKE 'E'.
     RETURN.
   ENDIF.
-  DATA: lv_base  TYPE string,
-        lv_done  TYPE i.
+  DATA: lv_base    TYPE string,
+        lv_done    TYPE i,
+        lt_k_paths TYPE STANDARD TABLE OF string,
+        lt_trkorrs TYPE STANDARD TABLE OF string,
+        lv_trkorr  TYPE string,
+        lv_buf_ok  TYPE i,
+        lv_buf_err TYPE i,
+        lv_bmsg    TYPE string,
+        lv_ok      TYPE abap_bool.
 
   lv_base = p_tru_td.
   IF substring( val = lv_base off = strlen( lv_base ) - 1 ) <> '/'.
     CONCATENATE lv_base '/' INTO lv_base.
   ENDIF.
 
-  " Upload all non-empty file pairs
-  IF p_tru_k1 IS NOT INITIAL. PERFORM upload_transport_file USING p_tru_k1 lv_base 'cofiles'. ADD 1 TO lv_done. PERFORM write_audit_log USING c_mod_tru 'TRANS_UPLOAD' p_tru_k1 'cofiles' 'W'. ENDIF.
+  " Upload all non-empty file pairs; collect K-paths for optional buffer add
+  IF p_tru_k1 IS NOT INITIAL. PERFORM upload_transport_file USING p_tru_k1 lv_base 'cofiles'. ADD 1 TO lv_done. PERFORM write_audit_log USING c_mod_tru 'TRANS_UPLOAD' p_tru_k1 'cofiles' 'W'. APPEND p_tru_k1 TO lt_k_paths. ENDIF.
   IF p_tru_r1 IS NOT INITIAL. PERFORM upload_transport_file USING p_tru_r1 lv_base 'data'. ADD 1 TO lv_done. PERFORM write_audit_log USING c_mod_tru 'TRANS_UPLOAD' p_tru_r1 'data' 'W'. ENDIF.
-  IF p_tru_k2 IS NOT INITIAL. PERFORM upload_transport_file USING p_tru_k2 lv_base 'cofiles'. ADD 1 TO lv_done. PERFORM write_audit_log USING c_mod_tru 'TRANS_UPLOAD' p_tru_k2 'cofiles' 'W'. ENDIF.
+  IF p_tru_k2 IS NOT INITIAL. PERFORM upload_transport_file USING p_tru_k2 lv_base 'cofiles'. ADD 1 TO lv_done. PERFORM write_audit_log USING c_mod_tru 'TRANS_UPLOAD' p_tru_k2 'cofiles' 'W'. APPEND p_tru_k2 TO lt_k_paths. ENDIF.
   IF p_tru_r2 IS NOT INITIAL. PERFORM upload_transport_file USING p_tru_r2 lv_base 'data'. ADD 1 TO lv_done. PERFORM write_audit_log USING c_mod_tru 'TRANS_UPLOAD' p_tru_r2 'data' 'W'. ENDIF.
-  IF p_tru_k3 IS NOT INITIAL. PERFORM upload_transport_file USING p_tru_k3 lv_base 'cofiles'. ADD 1 TO lv_done. PERFORM write_audit_log USING c_mod_tru 'TRANS_UPLOAD' p_tru_k3 'cofiles' 'W'. ENDIF.
+  IF p_tru_k3 IS NOT INITIAL. PERFORM upload_transport_file USING p_tru_k3 lv_base 'cofiles'. ADD 1 TO lv_done. PERFORM write_audit_log USING c_mod_tru 'TRANS_UPLOAD' p_tru_k3 'cofiles' 'W'. APPEND p_tru_k3 TO lt_k_paths. ENDIF.
   IF p_tru_r3 IS NOT INITIAL. PERFORM upload_transport_file USING p_tru_r3 lv_base 'data'. ADD 1 TO lv_done. PERFORM write_audit_log USING c_mod_tru 'TRANS_UPLOAD' p_tru_r3 'data' 'W'. ENDIF.
-  IF p_tru_k4 IS NOT INITIAL. PERFORM upload_transport_file USING p_tru_k4 lv_base 'cofiles'. ADD 1 TO lv_done. PERFORM write_audit_log USING c_mod_tru 'TRANS_UPLOAD' p_tru_k4 'cofiles' 'W'. ENDIF.
+  IF p_tru_k4 IS NOT INITIAL. PERFORM upload_transport_file USING p_tru_k4 lv_base 'cofiles'. ADD 1 TO lv_done. PERFORM write_audit_log USING c_mod_tru 'TRANS_UPLOAD' p_tru_k4 'cofiles' 'W'. APPEND p_tru_k4 TO lt_k_paths. ENDIF.
   IF p_tru_r4 IS NOT INITIAL. PERFORM upload_transport_file USING p_tru_r4 lv_base 'data'. ADD 1 TO lv_done. PERFORM write_audit_log USING c_mod_tru 'TRANS_UPLOAD' p_tru_r4 'data' 'W'. ENDIF.
+
+  " Add to STMS import buffer of current SID (plan B3)
+  IF p_tru_bf = abap_true AND lv_done > 0.
+    LOOP AT lt_k_paths INTO DATA(lv_kp).
+      CLEAR lv_trkorr.
+      PERFORM parse_trkorr_from_k USING lv_kp CHANGING lv_trkorr.
+      IF lv_trkorr IS INITIAL.
+        CONTINUE.
+      ENDIF.
+      READ TABLE lt_trkorrs TRANSPORTING NO FIELDS WITH KEY table_line = lv_trkorr.
+      IF sy-subrc = 0.
+        CONTINUE.
+      ENDIF.
+      APPEND lv_trkorr TO lt_trkorrs.
+      CLEAR: lv_ok, lv_bmsg.
+      PERFORM add_to_stms_buffer USING lv_trkorr CHANGING lv_ok lv_bmsg.
+      IF lv_ok = abap_true.
+        ADD 1 TO lv_buf_ok.
+        PERFORM write_audit_log USING c_mod_tru 'STMS_BUFFER_ADD' lv_trkorr sy-sysid 'W'.
+      ELSE.
+        ADD 1 TO lv_buf_err.
+        PERFORM write_audit_log USING c_mod_tru 'STMS_BUFFER_ADD' lv_trkorr lv_bmsg 'W'.
+      ENDIF.
+    ENDLOOP.
+  ENDIF.
 
   IF lv_done = 0.
     MESSAGE 'No files selected for upload.' TYPE 'S' DISPLAY LIKE 'W'.
+  ELSEIF p_tru_bf = abap_true.
+    IF lv_buf_err > 0 AND lv_buf_ok > 0.
+      MESSAGE |Upload: { lv_done } files. STMS buffer: { lv_buf_ok } added, { lv_buf_err } failed (check audit log).| TYPE 'S' DISPLAY LIKE 'W'.
+    ELSEIF lv_buf_err > 0.
+      MESSAGE |Upload: { lv_done } files. STMS buffer add FAILED for all transports (check audit log / S_CTS_ADMI).| TYPE 'S' DISPLAY LIKE 'W'.
+    ELSEIF lv_buf_ok > 0.
+      MESSAGE |Upload: { lv_done } files. { lv_buf_ok } transport(s) added to STMS buffer of { sy-sysid }.| TYPE 'S'.
+    ELSE.
+      MESSAGE |Upload: { lv_done } files. No K-files detected for buffer add.| TYPE 'S' DISPLAY LIKE 'W'.
+    ENDIF.
   ELSE.
     MESSAGE |Transport Upload finished ({ lv_done } files).| TYPE 'S'.
   ENDIF.
+ENDFORM.
+
+*--- PARSE TRANSPORT ID FROM K-FILENAME ---*
+* Input:  /path/to/K902985.EW3 (or plain K902985.EW3)
+* Output: EW3K902985
+FORM parse_trkorr_from_k USING iv_path TYPE string
+                      CHANGING cv_trkorr TYPE string.
+  DATA: lv_name TYPE string,
+        lv_sep  TYPE c LENGTH 1,
+        lv_pos  TYPE i,
+        lv_dot  TYPE i,
+        lv_num  TYPE string,
+        lv_sid  TYPE string,
+        lv_len  TYPE i.
+
+  CLEAR cv_trkorr.
+  IF iv_path CS '\'.
+    lv_sep = '\'.
+  ELSE.
+    lv_sep = '/'.
+  ENDIF.
+  lv_pos = 0.
+  FIND LAST OCCURRENCE OF lv_sep IN iv_path MATCH OFFSET lv_pos.
+  IF sy-subrc = 0.
+    lv_pos = lv_pos + 1.
+    lv_name = iv_path+lv_pos.
+  ELSE.
+    lv_name = iv_path.
+  ENDIF.
+
+  TRANSLATE lv_name TO UPPER CASE.
+  lv_len = strlen( lv_name ).
+  IF lv_len < 5 OR lv_name(1) <> 'K'.
+    RETURN.
+  ENDIF.
+
+  lv_dot = 0.
+  FIND '.' IN lv_name MATCH OFFSET lv_dot.
+  IF sy-subrc <> 0 OR lv_dot < 2.
+    RETURN.
+  ENDIF.
+
+  lv_num = lv_name+1(lv_dot - 1).
+  lv_dot = lv_dot + 1.
+  lv_sid = lv_name+lv_dot.
+
+  IF strlen( lv_sid ) = 3 AND strlen( lv_num ) > 0.
+    cv_trkorr = |{ lv_sid }K{ lv_num }|.
+  ENDIF.
+ENDFORM.
+
+*--- ADD TRKORR TO STMS IMPORT BUFFER OF CURRENT SID ---*
+* Requires S_CTS_ADMI with CTS_ADMFCT = IMPS at runtime.
+* FM TMS_MGR_FORWARD_TR_REQUEST is the canonical call; we wrap in safety.
+FORM add_to_stms_buffer USING iv_trkorr TYPE string
+                     CHANGING cv_ok TYPE abap_bool
+                              cv_msg TYPE string.
+  DATA: lv_trkorr   TYPE trkorr,
+        lv_target   TYPE tmssysnam,
+        lv_fm_exist TYPE c LENGTH 1.
+
+  cv_ok  = abap_false.
+  cv_msg = ''.
+  lv_trkorr = iv_trkorr.
+  lv_target = sy-sysid.
+
+  " Guard: is the FM present on this release?
+  CALL FUNCTION 'FUNCTION_EXISTS'
+    EXPORTING
+      funcname           = 'TMS_MGR_FORWARD_TR_REQUEST'
+    EXCEPTIONS
+      function_not_exist = 1
+      OTHERS             = 2.
+  IF sy-subrc <> 0.
+    cv_msg = 'FM TMS_MGR_FORWARD_TR_REQUEST not available on this release.'.
+    RETURN.
+  ENDIF.
+
+  " Wrap in TRY to also catch CX_SY_DYN_CALL_* when parameter names
+  " differ between NW releases.
+  TRY.
+      CALL FUNCTION 'TMS_MGR_FORWARD_TR_REQUEST'
+        EXPORTING
+          iv_request       = lv_trkorr
+          iv_target_system = lv_target
+        EXCEPTIONS
+          OTHERS           = 99.
+      IF sy-subrc = 0.
+        cv_ok  = abap_true.
+        cv_msg = |Added { lv_trkorr } to buffer of { lv_target }|.
+      ELSE.
+        cv_msg = |Forward failed for { lv_trkorr } (rc={ sy-subrc }). Check S_CTS_ADMI/IMPS.|.
+      ENDIF.
+    CATCH cx_sy_dyn_call_error INTO DATA(lx_dyn).
+      cv_msg = |TMS FM call error (release mismatch?): { lx_dyn->get_text( ) }|.
+    CATCH cx_root INTO DATA(lx).
+      cv_msg = |Exception in TMS forward: { lx->get_text( ) }|.
+  ENDTRY.
 ENDFORM.
 
 FORM upload_transport_file USING iv_pc_path TYPE string
@@ -2957,8 +3227,15 @@ FORM execute_cert_checker.
         lt_certlist   TYPE TABLE OF xstring,
         ls_certdata   TYPE xstring.
 
-  DATA: lt_pse_names TYPE TABLE OF string,
-        lv_pse_name  TYPE string.
+  DATA: lt_pse_names    TYPE TABLE OF string,
+        lv_pse_name     TYPE string,
+        lv_dir_name     TYPE salfile-longname,
+        lt_dir_list     TYPE TABLE OF salfldir,
+        ls_dir_list     TYPE salfldir,
+        lv_pse_fname_l  TYPE string,
+        lv_dir_read_ok  TYPE abap_bool VALUE abap_false,
+        lv_pse_tried    TYPE i,
+        lv_pse_read_ok  TYPE i.
 
   " Get instance security directory for PSE file paths
   CALL 'C_SAPGPARAM' ID 'NAME' FIELD 'DIR_INSTANCE' ID 'VALUE' FIELD lv_inst_dir.
@@ -2966,17 +3243,42 @@ FORM execute_cert_checker.
   " Build sec dir path
   CONCATENATE lv_inst_dir '/sec/' INTO lv_sec_dir.
 
-  " Standard PSE file names
-  APPEND 'SAPSSLS.pse' TO lt_pse_names.    " SSL Server Standard
-  APPEND 'SAPSSLC.pse' TO lt_pse_names.    " SSL Client Standard
-  APPEND 'SAPSSLA.pse' TO lt_pse_names.    " SSL Client Anonymous
-  APPEND 'WSSE.pse' TO lt_pse_names.       " WS Security
+  " --- Enumerate *.pse files actually present in the sec dir ---
+  lv_dir_name = lv_sec_dir.
+  CONDENSE lv_dir_name.
+  CALL FUNCTION 'RZL_READ_DIR_LOCAL'
+    EXPORTING
+      name     = lv_dir_name
+    TABLES
+      file_tbl = lt_dir_list
+    EXCEPTIONS
+      OTHERS   = 1.
+
+  IF sy-subrc = 0.
+    lv_dir_read_ok = abap_true.
+    LOOP AT lt_dir_list INTO ls_dir_list.
+      lv_pse_fname_l = ls_dir_list-name.
+      TRANSLATE lv_pse_fname_l TO LOWER CASE.
+      IF lv_pse_fname_l CP '*.pse'.
+        APPEND CONV string( ls_dir_list-name ) TO lt_pse_names.
+      ENDIF.
+    ENDLOOP.
+  ENDIF.
+
+  " Fallback: directory unreadable -> try the 4 standard PSE filenames blind
+  IF lt_pse_names IS INITIAL AND lv_dir_read_ok = abap_false.
+    APPEND 'SAPSSLS.pse' TO lt_pse_names.    " SSL Server Standard
+    APPEND 'SAPSSLC.pse' TO lt_pse_names.    " SSL Client Standard
+    APPEND 'SAPSSLA.pse' TO lt_pse_names.    " SSL Client Anonymous
+    APPEND 'WSSE.pse'    TO lt_pse_names.    " WS Security
+  ENDIF.
 
   lv_today = sy-datum.
 
   LOOP AT lt_pse_names INTO lv_pse_name.
     " Build full PSE file path
     CONCATENATE lv_sec_dir lv_pse_name INTO lv_profile.
+    ADD 1 TO lv_pse_tried.
 
     " Try to read certificate list from PSE file
     TRY.
@@ -2991,6 +3293,7 @@ FORM execute_cert_checker.
             OTHERS          = 6.
 
         IF sy-subrc <> 0. CONTINUE. ENDIF.
+        ADD 1 TO lv_pse_read_ok.
 
         LOOP AT lt_certlist INTO ls_certdata.
           CLEAR: lv_subject, lv_issuer, lv_serial, lv_from, lv_to.
@@ -3045,7 +3348,13 @@ FORM execute_cert_checker.
   ENDLOOP.
 
   IF lt_certs IS INITIAL.
-    MESSAGE 'No certificates found. Check STRUST authorization (S_SSF_KRN).' TYPE 'S' DISPLAY LIKE 'W'.
+    IF lv_dir_read_ok = abap_true AND lv_pse_tried = 0.
+      MESSAGE |No PSE files present in { lv_sec_dir }.| TYPE 'S' DISPLAY LIKE 'W'.
+    ELSEIF lv_pse_read_ok = 0.
+      MESSAGE |Tried { lv_pse_tried } PSE file(s) in { lv_sec_dir } - none readable (SAPSECULIB / filesystem perms / STRUST).| TYPE 'S' DISPLAY LIKE 'W'.
+    ELSE.
+      MESSAGE |PSE file(s) readable but no certificates returned - likely empty PSEs.| TYPE 'S' DISPLAY LIKE 'W'.
+    ENDIF.
     RETURN.
   ENDIF.
 
@@ -3391,6 +3700,85 @@ FORM f4_file_open USING cv_path TYPE string iv_zip TYPE c.
   ENDIF.
 ENDFORM.
 
+*--- F4 HELP: TRU K/R FILE OPEN WITH SIBLING AUTO-FILL (plan B2) ---*
+* Opens file picker for a K or R transport file. If the selected file name
+* starts with K/R, we try to find the sibling (R/K) in the same directory
+* and auto-populate cv_sibling if found.
+FORM f4_tru_file CHANGING cv_path    TYPE string
+                          cv_sibling TYPE string.
+  DATA: lt_f        TYPE filetable,
+        lv_rc       TYPE i,
+        lv_sel      TYPE string,
+        lv_sep      TYPE c LENGTH 1,
+        lv_dir      TYPE string,
+        lv_name     TYPE string,
+        lv_first    TYPE c LENGTH 1,
+        lv_rest     TYPE string,
+        lv_new      TYPE string,
+        lv_sib_full TYPE string,
+        lv_exists   TYPE abap_bool,
+        lv_pos      TYPE i.
+
+  cl_gui_frontend_services=>file_open_dialog(
+    EXPORTING
+      file_filter = '*.*'
+    CHANGING
+      file_table  = lt_f
+      rc          = lv_rc
+    EXCEPTIONS
+      OTHERS      = 1 ).
+  IF lines( lt_f ) = 0.
+    RETURN.
+  ENDIF.
+
+  lv_sel = lt_f[ 1 ]-filename.
+  cv_path = lv_sel.
+
+  " Determine path separator (Windows path => '\', else '/')
+  IF lv_sel CS '\'.
+    lv_sep = '\'.
+  ELSE.
+    lv_sep = '/'.
+  ENDIF.
+
+  " Split into directory + file name (last separator)
+  lv_pos = 0.
+  FIND LAST OCCURRENCE OF lv_sep IN lv_sel MATCH OFFSET lv_pos.
+  IF sy-subrc = 0.
+    lv_pos = lv_pos + 1.           " include the separator in the dir prefix
+    lv_dir  = lv_sel(lv_pos).
+    lv_name = lv_sel+lv_pos.
+  ELSE.
+    lv_dir  = ''.
+    lv_name = lv_sel.
+  ENDIF.
+
+  IF strlen( lv_name ) < 1.
+    RETURN.
+  ENDIF.
+
+  lv_first = lv_name(1).
+  TRANSLATE lv_first TO UPPER CASE.
+  lv_rest  = lv_name+1.
+
+  CASE lv_first.
+    WHEN 'K'. lv_new = |R{ lv_rest }|.
+    WHEN 'R'. lv_new = |K{ lv_rest }|.
+    WHEN OTHERS. RETURN.
+  ENDCASE.
+
+  lv_sib_full = |{ lv_dir }{ lv_new }|.
+
+  cl_gui_frontend_services=>file_exist(
+    EXPORTING  file   = lv_sib_full
+    RECEIVING  result = lv_exists
+    EXCEPTIONS OTHERS = 1 ).
+
+  IF sy-subrc = 0 AND lv_exists = abap_true.
+    cv_sibling = lv_sib_full.
+  ENDIF.
+ENDFORM.
+
 *--- F4 HELP FOR DIRECTORY ---*
 FORM f4_dir_open USING cv_dir TYPE string.
   DATA: lv_folder TYPE string.
@@ -3464,12 +3852,13 @@ FORM write_audit_log USING iv_module   TYPE clike
                            iv_detail1  TYPE clike
                            iv_detail2  TYPE clike
                            iv_severity TYPE clike.
-  " Gate 1: Debug mode suppresses ALL audit writes (incl. Severity C/SM20)
-  IF gv_debug_active = abap_true.
+  " Gate 1: Debug mode WITHOUT audit suppresses ALL audit writes
+  IF gv_debug_active = abap_true AND gv_debug_audit = abap_false.
     RETURN.
   ENDIF.
-  " Gate 2: On non-PRD, audit is off by default (override via c_audit_non_prd)
-  IF gv_is_prd = abap_false AND c_audit_non_prd = abap_false.
+  " Gate 2: On non-PRD (and non-debug), audit is off by default (override via c_audit_non_prd).
+  " In debug-WITH-audit we always write through, regardless of PRD/non-PRD.
+  IF gv_debug_active = abap_false AND gv_is_prd = abap_false AND c_audit_non_prd = abap_false.
     RETURN.
   ENDIF.
 
