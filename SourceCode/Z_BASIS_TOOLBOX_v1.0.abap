@@ -2825,13 +2825,15 @@ ENDFORM.
 * Output: EW3K902985
 FORM parse_trkorr_from_k USING iv_path TYPE string
                       CHANGING cv_trkorr TYPE string.
-  DATA: lv_name TYPE string,
-        lv_sep  TYPE c LENGTH 1,
-        lv_pos  TYPE i,
-        lv_dot  TYPE i,
-        lv_num  TYPE string,
-        lv_sid  TYPE string,
-        lv_len  TYPE i.
+  DATA: lv_name    TYPE string,
+        lv_sep     TYPE c LENGTH 1,
+        lv_pos     TYPE i,
+        lv_dot     TYPE i,
+        lv_num     TYPE string,
+        lv_sid     TYPE string,
+        lv_len     TYPE i,
+        lv_num_len TYPE i,
+        lt_match   TYPE match_result_tab.
 
   CLEAR cv_trkorr.
   IF iv_path CS '\'.
@@ -2839,10 +2841,11 @@ FORM parse_trkorr_from_k USING iv_path TYPE string
   ELSE.
     lv_sep = '/'.
   ENDIF.
-  lv_pos = 0.
-  FIND LAST OCCURRENCE OF lv_sep IN iv_path MATCH OFFSET lv_pos.
-  IF sy-subrc = 0.
-    lv_pos = lv_pos + 1.
+
+  " Get offset of LAST separator (no FIND LAST OCCURRENCE in classic ABAP)
+  FIND ALL OCCURRENCES OF lv_sep IN iv_path RESULTS lt_match.
+  IF lt_match IS NOT INITIAL.
+    lv_pos = lt_match[ lines( lt_match ) ]-offset + 1.
     lv_name = iv_path+lv_pos.
   ELSE.
     lv_name = iv_path.
@@ -2860,7 +2863,9 @@ FORM parse_trkorr_from_k USING iv_path TYPE string
     RETURN.
   ENDIF.
 
-  lv_num = lv_name+1(lv_dot - 1).
+  " Substring length must be a single variable, not an expression.
+  lv_num_len = lv_dot - 1.
+  lv_num = lv_name+1(lv_num_len).
   lv_dot = lv_dot + 1.
   lv_sid = lv_name+lv_dot.
 
@@ -3717,7 +3722,8 @@ FORM f4_tru_file CHANGING cv_path    TYPE string
         lv_new      TYPE string,
         lv_sib_full TYPE string,
         lv_exists   TYPE abap_bool,
-        lv_pos      TYPE i.
+        lv_pos      TYPE i,
+        lt_match    TYPE match_result_tab.
 
   cl_gui_frontend_services=>file_open_dialog(
     EXPORTING
@@ -3741,11 +3747,10 @@ FORM f4_tru_file CHANGING cv_path    TYPE string
     lv_sep = '/'.
   ENDIF.
 
-  " Split into directory + file name (last separator)
-  lv_pos = 0.
-  FIND LAST OCCURRENCE OF lv_sep IN lv_sel MATCH OFFSET lv_pos.
-  IF sy-subrc = 0.
-    lv_pos = lv_pos + 1.           " include the separator in the dir prefix
+  " Split into directory + file name (offset of LAST separator)
+  FIND ALL OCCURRENCES OF lv_sep IN lv_sel RESULTS lt_match.
+  IF lt_match IS NOT INITIAL.
+    lv_pos = lt_match[ lines( lt_match ) ]-offset + 1.   " include the separator in the dir prefix
     lv_dir  = lv_sel(lv_pos).
     lv_name = lv_sel+lv_pos.
   ELSE.
