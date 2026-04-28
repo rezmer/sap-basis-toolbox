@@ -32,7 +32,7 @@ In SAP Private Cloud (RISE/HEC) environments, admins typically cannot SSH to the
 
 ## Features
 
-Nine modules, all reachable from one main menu:
+Ten modules, all reachable from one main menu:
 
 | Module | Description |
 |---|---|
@@ -40,6 +40,7 @@ Nine modules, all reachable from one main menu:
 | **Upload ZIP** | Extract a ZIP flat into a server directory |
 | **Transport Download** | Pull `K*` / `R*` transport files from the server to the frontend |
 | **Transport Upload** | Push up to 4 transports (Co-File + Data-File) from the frontend to the server, with K↔R sibling auto-fill and optional *Add to STMS import buffer* |
+| **STMS Buffer** | Add multiple existing transports to the STMS import buffer of any target system/client (multi-value SELECT-OPTIONS, ALV result popup) |
 | **Grep** | Recursive text search with filename filter, ALV result list with hotspot jump |
 | **Network Diagnostics** | `ping`, `nslookup`, `traceroute`, `curl` against a hostname/URL |
 | **Certificate Checker** | Scans `<DIR_INSTANCE>/sec/*.pse` and displays expiry status with traffic-light icons |
@@ -83,7 +84,7 @@ Three self-contained PFCG roles. Each role **must** carry the standard SAP autho
 
 | Role | `Z_BASTOOL` | Summary |
 |---|---|---|
-| `Z_BASIS_TOOL_USER`  | `MODL ∈ {FM,TRD,TRU,NET,CRT,GRP,PRF,SYS}`, `ACTN=01` | Read/display only. **No** ZIP Upload, **no** Curl |
+| `Z_BASIS_TOOL_USER`  | `MODL ∈ {FM,TRD,TRU,STM,NET,CRT,GRP,PRF,SYS}`, `ACTN=01` | Read/display + Transport Upload + STMS Buffer Add. **No** ZIP Upload, **no** Curl |
 | `Z_BASIS_TOOL_ADMIN` | `MODL=*`, `ACTN ∈ {01,02}` | Full read + write. On PRD: no FM write except empty-dir delete, no ZIP Upload, no Transport Upload |
 | `Z_BASIS_TOOL_DEBUG` | `MODL=*`, `ACTN ∈ {01,02,99}` | Emergency bypass — **no auditing**, PRD restrictions lifted. Use sparingly |
 
@@ -151,8 +152,10 @@ S_DATASET   ACTVT    = 33
             PROGRAM  = Z_BASIS_TOOLBOX
             FILENAME = *
 S_GUI       ACTVT = 61
-Z_BASTOOL   ZBAS_MODL = FM, TRD, TRU, NET, CRT, GRP, PRF, SYS
+Z_BASTOOL   ZBAS_MODL = FM, TRD, TRU, STM, NET, CRT, GRP, PRF, SYS
             ZBAS_ACTN = 01
+S_CTS_ADMI  CTS_ADMFCT = IMPS   (only required for STMS Buffer Add and the
+                                 'Add to STMS Buffer' checkbox in Transport Upload)
 ```
 
 **`Z_BASIS_TOOL_ADMIN`**
@@ -172,7 +175,7 @@ Z_BASTOOL   ZBAS_MODL = *
             ZBAS_ACTN = 01, 02
 ```
 
-> **Optional for Transport Upload "Add to STMS Buffer":** if admins should be able to use the new checkbox that adds the uploaded transport to the local STMS import queue, add `S_CTS_ADMI` with `CTS_ADMFCT = IMPS` (Import Scheduling). Without it, the upload itself still works, but the buffer add fails with a W-severity audit entry.
+> **Required for STMS Buffer Add (module STM) and the "Add to STMS Buffer" checkbox in Transport Upload:** add `S_CTS_ADMI` with `CTS_ADMFCT = IMPS` (Import Scheduling). Without it, the buffer add fails with a W-severity audit entry. STMS Buffer Add is **not blocked on PRD** because it does not change PRD data — the actual import is owned by CTS and gated by `S_CTS_ADMI/IMPS`.
 
 **`Z_BASIS_TOOL_DEBUG`**
 ```
@@ -204,6 +207,7 @@ Z_BASTOOL   ZBAS_MODL = *
 | ZIP Upload | ❌ | ✅ | 🚫 blocked | ✅ |
 | Transport Download | ✅ | ✅ | ✅ | ✅ |
 | Transport Upload | ✅ | ✅ | 🚫 blocked | ✅ |
+| STMS Buffer Add (multi-transport) | ✅ | ✅ | ✅ | ✅ |
 | Network (ping/nslookup/traceroute) | ✅ | ✅ | ✅ | ✅ |
 | Network Curl | ❌ | ✅ | ✅ | ✅ |
 | Grep / Certificates / Profile / System Info | ✅ | ✅ | ✅ | ✅ |
@@ -213,7 +217,8 @@ Z_BASTOOL   ZBAS_MODL = *
 - **FM Delete File on PRD** is blocked per-item. The summary message explicitly names how many items were blocked on the productive system vs. how many failed for other reasons (e.g. non-empty folder).
 - **FM Delete empty Directory on PRD** is **allowed**. Removing an empty folder is non-destructive (no data loss) and occasionally needed after a failed op.
 - **Transport Upload — K ↔ R auto-fill:** picking a `K*` file in the file dialog tries to locate the matching `R*` sibling in the same directory and populates the R-field automatically (and vice-versa). If the sibling is missing, the other field stays empty — no error.
-- **Transport Upload — Add to STMS Buffer:** after a successful upload on a non-PRD system, the checkbox *"Add to STMS import buffer of `<SID>/<MANDT>`"* forwards each detected transport (parsed from the `K<num>.<SID>` filename) to the local STMS import queue via `TMS_MGR_FORWARD_TR_REQUEST`. Requires `S_CTS_ADMI / CTS_ADMFCT = IMPS`. Each forward is logged separately as `STMS_BUFFER_ADD` (severity `W`).
+- **Transport Upload — Add to STMS Buffer:** after a successful upload on a non-PRD system, the checkbox *"Add to STMS import buffer of `<SID>/<MANDT>`"* forwards each detected transport (parsed from the `K<num>.<SID>` filename) to the local STMS import queue. The implementation tries `TMS_MGR_IMPORT_TR_REQUEST` first (matches the working pattern documented in [sapabapcentral.blogspot.com/2017/09](https://sapabapcentral.blogspot.com/2017/09/adding-multiple-transport-requests-to.html)) and falls back to `TMS_MGR_FORWARD_TR_REQUEST` on older releases. Requires `S_CTS_ADMI / CTS_ADMFCT = IMPS`. Each add is logged separately as `STMS_BUFFER_ADD` (severity `W`).
+- **STMS Buffer (module STM):** standalone module that adds an arbitrary list of existing transport requests to the STMS import buffer of a chosen target system / client. Trkorrs are entered via SELECT-OPTIONS (multi-value, no ranges) with `e070-trkorr` F4 help. Each row is validated for `<SID>K<digits>` format. Result is shown as an ALV popup with `Transport / Result / Message` columns. Available to USER + ADMIN, **not blocked on PRD** (the buffer add is owned by CTS and gated by `S_CTS_ADMI/IMPS`).
 - **Debug mode — startup popup** offers three choices: *Continue (with Audit)* / *Continue (no Audit)* / *Abort*. "With Audit" writes a severity-`C` `DEBUG_MODE_START` entry (requires `ZBAS_TOOL_LOG` to exist). "No Audit" requires a second confirmation and disables all audit writes for the session. Debug mode is activated either by the compile-time flag `c_debug_mode = 'X'` or by the role `Z_BASIS_TOOL_DEBUG` (`ZBAS_ACTN = 99`) at runtime.
 - **Certificate Checker** dynamically enumerates `*.pse` files in `<DIR_INSTANCE>/sec/` (via `RZL_READ_DIR_LOCAL`) rather than relying on a hard-coded list. If none are found you get a precise message — "no PSE files present" vs. "PSE files found but cannot be read" vs. an auth-check failure.
 
@@ -223,7 +228,7 @@ All in package `Z_BASIS` / authorization class `ZZBASIS` (“Basis Custom Object
 
 | Object | Type | Notes |
 |---|---|---|
-| `ZBAS_DO_MODL` | Domain | `CHAR 3`, fixed values `FM`, `ZUP`, `TRD`, `TRU`, `GRP`, `NET`, `CRT`, `PRF`, `SYS`, `*` |
+| `ZBAS_DO_MODL` | Domain | `CHAR 3`, fixed values `FM`, `ZUP`, `TRD`, `TRU`, `STM`, `GRP`, `NET`, `CRT`, `PRF`, `SYS`, `*` |
 | `ZBAS_DO_ACTN` | Domain | `CHAR 2`, fixed values `01`, `02`, `99` |
 | `ZBAS_DE_MODL`, `ZBAS_DE_ACTN` | Data Elements | Reference the domains above |
 | `ZBAS_MODL`, `ZBAS_ACTN` | Authorization Fields (SU20) | Standard maintenance |
