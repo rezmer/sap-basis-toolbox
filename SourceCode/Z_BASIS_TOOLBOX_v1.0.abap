@@ -2853,6 +2853,10 @@ FORM parse_trkorr_from_k USING iv_path TYPE string
 
   TRANSLATE lv_name TO UPPER CASE.
   lv_len = strlen( lv_name ).
+
+  " Strict format: K<digits>.<3-char-SID>  (e.g. K902985.EW3)
+  " Anything else (custom names, duplicate transports, no extension) is rejected
+  " so we never feed garbage like "D66K_TRANSPORT1@2A1A" into TMS_MGR_FORWARD.
   IF lv_len < 5 OR lv_name(1) <> 'K'.
     RETURN.
   ENDIF.
@@ -2869,9 +2873,23 @@ FORM parse_trkorr_from_k USING iv_path TYPE string
   lv_dot = lv_dot + 1.
   lv_sid = lv_name+lv_dot.
 
-  IF strlen( lv_sid ) = 3 AND strlen( lv_num ) > 0.
-    cv_trkorr = |{ lv_sid }K{ lv_num }|.
+  " Validate: number part is purely digits, SID is exactly 3 alphanumeric chars
+  IF strlen( lv_sid ) <> 3.
+    RETURN.
   ENDIF.
+  IF lv_num IS INITIAL OR NOT lv_num CO '0123456789'.
+    RETURN.
+  ENDIF.
+  IF NOT lv_sid CO 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'.
+    RETURN.
+  ENDIF.
+
+  " Final length check (TRKORR is CHAR 20)
+  IF strlen( lv_sid ) + 1 + strlen( lv_num ) > 20.
+    RETURN.
+  ENDIF.
+
+  cv_trkorr = |{ lv_sid }K{ lv_num }|.
 ENDFORM.
 
 *--- ADD TRKORR TO STMS IMPORT BUFFER OF CURRENT SID ---*
@@ -3214,151 +3232,36 @@ ENDFORM.
 *--- CERTIFICATE CHECKER ---*
 FORM execute_cert_checker.
   DATA: lt_certs   TYPE TABLE OF ty_cert_info,
-        ls_cert    TYPE ty_cert_info,
         lo_alv     TYPE REF TO cl_salv_table,
         lo_cols    TYPE REF TO cl_salv_columns_table,
         lo_col     TYPE REF TO cl_salv_column,
         lo_funcs   TYPE REF TO cl_salv_functions_list.
 
-  DATA: lv_subject    TYPE string,
-        lv_issuer     TYPE string,
-        lv_from       TYPE d,
-        lv_to         TYPE d,
-        lv_today      TYPE d,
-        lv_serial     TYPE string,
-        lv_profile    TYPE c LENGTH 256,
-        lv_sec_dir    TYPE c LENGTH 128,
-        lv_inst_dir   TYPE c LENGTH 128,
-        lt_certlist   TYPE TABLE OF xstring,
-        ls_certdata   TYPE xstring.
-
-  DATA: lt_pse_names    TYPE TABLE OF string,
-        lv_pse_name     TYPE string,
-        lv_dir_name     TYPE salfile-longname,
-        lt_dir_list     TYPE TABLE OF salfldir,
-        ls_dir_list     TYPE salfldir,
-        lv_pse_fname_l  TYPE string,
-        lv_dir_read_ok  TYPE abap_bool VALUE abap_false,
-        lv_pse_tried    TYPE i,
-        lv_pse_read_ok  TYPE i.
-
-  " Get instance security directory for PSE file paths
-  CALL 'C_SAPGPARAM' ID 'NAME' FIELD 'DIR_INSTANCE' ID 'VALUE' FIELD lv_inst_dir.
-
-  " Build sec dir path
-  CONCATENATE lv_inst_dir '/sec/' INTO lv_sec_dir.
-
-  " --- Enumerate *.pse files actually present in the sec dir ---
-  lv_dir_name = lv_sec_dir.
-  CONDENSE lv_dir_name.
-  CALL FUNCTION 'RZL_READ_DIR_LOCAL'
-    EXPORTING
-      name     = lv_dir_name
-    TABLES
-      file_tbl = lt_dir_list
-    EXCEPTIONS
-      OTHERS   = 1.
-
-  IF sy-subrc = 0.
-    lv_dir_read_ok = abap_true.
-    LOOP AT lt_dir_list INTO ls_dir_list.
-      lv_pse_fname_l = ls_dir_list-name.
-      TRANSLATE lv_pse_fname_l TO LOWER CASE.
-      IF lv_pse_fname_l CP '*.pse'.
-        APPEND CONV string( ls_dir_list-name ) TO lt_pse_names.
-      ENDIF.
-    ENDLOOP.
-  ENDIF.
-
-  " Fallback: directory unreadable -> try the 4 standard PSE filenames blind
-  IF lt_pse_names IS INITIAL AND lv_dir_read_ok = abap_false.
-    APPEND 'SAPSSLS.pse' TO lt_pse_names.    " SSL Server Standard
-    APPEND 'SAPSSLC.pse' TO lt_pse_names.    " SSL Client Standard
-    APPEND 'SAPSSLA.pse' TO lt_pse_names.    " SSL Client Anonymous
-    APPEND 'WSSE.pse'    TO lt_pse_names.    " WS Security
-  ENDIF.
+  DATA: lv_today    TYPE d,
+        lv_db_tried TYPE i,
+        lv_db_ok    TYPE i,
+        lv_fs_tried TYPE i,
+        lv_fs_ok    TYPE i.
 
   lv_today = sy-datum.
 
-  LOOP AT lt_pse_names INTO lv_pse_name.
-    " Build full PSE file path
-    CONCATENATE lv_sec_dir lv_pse_name INTO lv_profile.
-    ADD 1 TO lv_pse_tried.
+  " === Step 1: STRUST DB-based scan (SSFP_GET_PSEINFO over standard contexts) ===
+  " Inspired by SSF_ALERT_CERTEXPIRE; works even if PSEs live only in DB.
+  PERFORM scan_pses_db USING lv_today
+                    CHANGING lt_certs lv_db_tried lv_db_ok.
 
-    " Try to read certificate list from PSE file
-    TRY.
-        CLEAR lt_certlist.
-
-        CALL FUNCTION 'SSFC_GET_CERTIFICATELIST'
-          EXPORTING
-            profile         = lv_profile
-          TABLES
-            certificatelist = lt_certlist
-          EXCEPTIONS
-            OTHERS          = 6.
-
-        IF sy-subrc <> 0. CONTINUE. ENDIF.
-        ADD 1 TO lv_pse_read_ok.
-
-        LOOP AT lt_certlist INTO ls_certdata.
-          CLEAR: lv_subject, lv_issuer, lv_serial, lv_from, lv_to.
-
-          CALL FUNCTION 'SSFC_PARSE_CERTIFICATE'
-            EXPORTING
-              certificate = ls_certdata
-            IMPORTING
-              subject     = lv_subject
-              issuer      = lv_issuer
-              serialno    = lv_serial
-              validfrom   = lv_from
-              validto     = lv_to
-            EXCEPTIONS
-              OTHERS      = 6.
-
-          IF sy-subrc <> 0. CONTINUE. ENDIF.
-
-          CLEAR ls_cert.
-          ls_cert-context = lv_pse_name.
-          ls_cert-subject = lv_subject.
-          ls_cert-issuer  = lv_issuer.
-          ls_cert-serial  = lv_serial.
-
-          " Format dates
-          IF lv_from IS NOT INITIAL.
-            CONCATENATE lv_from(4) '-' lv_from+4(2) '-' lv_from+6(2) INTO ls_cert-valid_from.
-          ENDIF.
-          IF lv_to IS NOT INITIAL.
-            CONCATENATE lv_to(4) '-' lv_to+4(2) '-' lv_to+6(2) INTO ls_cert-valid_to.
-          ENDIF.
-
-          " Calculate days left
-          ls_cert-days_left = lv_to - lv_today.
-
-          " Traffic light icon
-          IF ls_cert-days_left < 0.
-            ls_cert-icon = icon_red_light.
-          ELSEIF ls_cert-days_left < 30.
-            ls_cert-icon = icon_yellow_light.
-          ELSE.
-            ls_cert-icon = icon_green_light.
-          ENDIF.
-
-          APPEND ls_cert TO lt_certs.
-        ENDLOOP.
-
-      CATCH cx_root.
-        " Skip PSEs that cause type/access errors
-        CONTINUE.
-    ENDTRY.
-  ENDLOOP.
-
+  " === Step 2: Filesystem fallback when DB scan returned nothing ===
   IF lt_certs IS INITIAL.
-    IF lv_dir_read_ok = abap_true AND lv_pse_tried = 0.
-      MESSAGE |No PSE files present in { lv_sec_dir }.| TYPE 'S' DISPLAY LIKE 'W'.
-    ELSEIF lv_pse_read_ok = 0.
-      MESSAGE |Tried { lv_pse_tried } PSE file(s) in { lv_sec_dir } - none readable (SAPSECULIB / filesystem perms / STRUST).| TYPE 'S' DISPLAY LIKE 'W'.
+    PERFORM scan_pses_fs USING lv_today
+                      CHANGING lt_certs lv_fs_tried lv_fs_ok.
+  ENDIF.
+
+  " === Step 3: Differentiated end message when nothing was found ===
+  IF lt_certs IS INITIAL.
+    IF lv_db_ok = 0 AND lv_fs_ok = 0.
+      MESSAGE |No certificates found. Tried { lv_db_tried } STRUST contexts via SSFP_GET_PSEINFO and { lv_fs_tried } PSE file(s) in DIR_INSTANCE/sec. Check S_RZL_ADM / SAPSECULIB / STRUST configuration.| TYPE 'S' DISPLAY LIKE 'W'.
     ELSE.
-      MESSAGE |PSE file(s) readable but no certificates returned - likely empty PSEs.| TYPE 'S' DISPLAY LIKE 'W'.
+      MESSAGE |PSE access succeeded but no certificates were returned (PSEs may be empty).| TYPE 'S' DISPLAY LIKE 'W'.
     ENDIF.
     RETURN.
   ENDIF.
@@ -3395,6 +3298,206 @@ FORM execute_cert_checker.
     CATCH cx_salv_msg.
       MESSAGE 'Error displaying certificates.' TYPE 'S' DISPLAY LIKE 'E'.
   ENDTRY.
+ENDFORM.
+
+*--- CERT SCAN: STRUST DB-based via SSFP_GET_PSEINFO ---*
+FORM scan_pses_db USING iv_today TYPE d
+               CHANGING ct_certs TYPE ANY TABLE
+                        cv_tried TYPE i
+                        cv_ok    TYPE i.
+  TYPES: BEGIN OF lty_pse_cand,
+           context  TYPE c LENGTH 4,
+           applic   TYPE c LENGTH 6,
+           descript TYPE string,
+         END OF lty_pse_cand.
+  DATA: lt_pses     TYPE STANDARD TABLE OF lty_pse_cand,
+        ls_pse      TYPE lty_pse_cand,
+        lv_cert     TYPE xstring,
+        lt_pklist   TYPE STANDARD TABLE OF xstring,
+        ls_pkitem   TYPE xstring,
+        ls_cert     TYPE ty_cert_info,
+        lv_subject  TYPE string,
+        lv_issuer   TYPE string,
+        lv_serial   TYPE string,
+        lv_from     TYPE d,
+        lv_to       TYPE d,
+        lv_label    TYPE string.
+
+  " Standard STRUST contexts (cf. SSF_ALERT_CERTEXPIRE create_pse_list)
+  ls_pse-context = 'SSLS'. ls_pse-applic = 'DFAULT'. ls_pse-descript = 'SSL Server (DFAULT)'.   APPEND ls_pse TO lt_pses.
+  ls_pse-context = 'SSLC'. ls_pse-applic = 'ANONYM'. ls_pse-descript = 'SSL Client (Anonym)'.   APPEND ls_pse TO lt_pses.
+  ls_pse-context = 'SSLC'. ls_pse-applic = 'DFAULT'. ls_pse-descript = 'SSL Client (DFAULT)'.   APPEND ls_pse TO lt_pses.
+  ls_pse-context = 'SSO2'. ls_pse-applic = 'DFAULT'. ls_pse-descript = 'SAP Logon Tickets'.     APPEND ls_pse TO lt_pses.
+  ls_pse-context = 'WSSE'. ls_pse-applic = 'DFAULT'. ls_pse-descript = 'WS-Security (DFAULT)'.  APPEND ls_pse TO lt_pses.
+
+  LOOP AT lt_pses INTO ls_pse.
+    ADD 1 TO cv_tried.
+    CLEAR: lv_cert, lt_pklist.
+
+    TRY.
+        CALL FUNCTION 'SSFP_GET_PSEINFO'
+          EXPORTING
+            context         = ls_pse-context
+            applic          = ls_pse-applic
+            accept_no_cert  = 'X'
+          IMPORTING
+            certificate     = lv_cert
+            certificatelist = lt_pklist
+          EXCEPTIONS
+            ssf_no_ssflib     = 1
+            ssf_krn_error     = 2
+            ssf_invalid_par   = 3   " PSE does not exist on this system - skip
+            ssf_unknown_error = 4
+            OTHERS            = 5.
+      CATCH cx_root.
+        sy-subrc = 99.
+    ENDTRY.
+
+    IF sy-subrc = 3 OR sy-subrc = 99.
+      CONTINUE.    " PSE not present / FM unavailable - silent skip
+    ENDIF.
+    IF sy-subrc <> 0.
+      CONTINUE.
+    ENDIF.
+
+    ADD 1 TO cv_ok.
+    lv_label = |{ ls_pse-context }/{ ls_pse-applic } - { ls_pse-descript }|.
+
+    " Own certificate
+    IF lv_cert IS NOT INITIAL.
+      PERFORM parse_cert_into_row USING lv_cert lv_label 'OWN' iv_today CHANGING ct_certs.
+    ENDIF.
+
+    " Trusted CA / partner certs
+    LOOP AT lt_pklist INTO ls_pkitem.
+      IF ls_pkitem IS INITIAL. CONTINUE. ENDIF.
+      PERFORM parse_cert_into_row USING ls_pkitem lv_label 'TRUST' iv_today CHANGING ct_certs.
+    ENDLOOP.
+  ENDLOOP.
+ENDFORM.
+
+*--- CERT SCAN: filesystem fallback over <DIR_INSTANCE>/sec/*.pse ---*
+FORM scan_pses_fs USING iv_today TYPE d
+               CHANGING ct_certs TYPE ANY TABLE
+                        cv_tried TYPE i
+                        cv_ok    TYPE i.
+  DATA: lv_inst_dir    TYPE c LENGTH 128,
+        lv_sec_dir     TYPE c LENGTH 128,
+        lv_dir_name    TYPE salfile-longname,
+        lt_dir_list    TYPE TABLE OF salfldir,
+        ls_dir_list    TYPE salfldir,
+        lt_pse_names   TYPE TABLE OF string,
+        lv_pse_name    TYPE string,
+        lv_profile     TYPE c LENGTH 256,
+        lv_pse_fname_l TYPE string,
+        lv_dir_read_ok TYPE abap_bool VALUE abap_false,
+        lt_certlist    TYPE TABLE OF xstring,
+        ls_certdata    TYPE xstring,
+        lv_label       TYPE string.
+
+  CALL 'C_SAPGPARAM' ID 'NAME' FIELD 'DIR_INSTANCE' ID 'VALUE' FIELD lv_inst_dir.
+  CONCATENATE lv_inst_dir '/sec/' INTO lv_sec_dir.
+
+  lv_dir_name = lv_sec_dir.
+  CONDENSE lv_dir_name.
+  CALL FUNCTION 'RZL_READ_DIR_LOCAL'
+    EXPORTING  name     = lv_dir_name
+    TABLES     file_tbl = lt_dir_list
+    EXCEPTIONS OTHERS   = 1.
+  IF sy-subrc = 0.
+    lv_dir_read_ok = abap_true.
+    LOOP AT lt_dir_list INTO ls_dir_list.
+      lv_pse_fname_l = ls_dir_list-name.
+      TRANSLATE lv_pse_fname_l TO LOWER CASE.
+      IF lv_pse_fname_l CP '*.pse'.
+        APPEND CONV string( ls_dir_list-name ) TO lt_pse_names.
+      ENDIF.
+    ENDLOOP.
+  ENDIF.
+
+  " Last-resort fallback: blind probe of the standard 4 file names
+  IF lt_pse_names IS INITIAL AND lv_dir_read_ok = abap_false.
+    APPEND 'SAPSSLS.pse' TO lt_pse_names.
+    APPEND 'SAPSSLC.pse' TO lt_pse_names.
+    APPEND 'SAPSSLA.pse' TO lt_pse_names.
+    APPEND 'WSSE.pse'    TO lt_pse_names.
+  ENDIF.
+
+  LOOP AT lt_pse_names INTO lv_pse_name.
+    ADD 1 TO cv_tried.
+    CONCATENATE lv_sec_dir lv_pse_name INTO lv_profile.
+
+    TRY.
+        CLEAR lt_certlist.
+        CALL FUNCTION 'SSFC_GET_CERTIFICATELIST'
+          EXPORTING  profile         = lv_profile
+          TABLES     certificatelist = lt_certlist
+          EXCEPTIONS OTHERS          = 6.
+        IF sy-subrc <> 0. CONTINUE. ENDIF.
+        ADD 1 TO cv_ok.
+
+        lv_label = |file:{ lv_pse_name }|.
+        LOOP AT lt_certlist INTO ls_certdata.
+          IF ls_certdata IS INITIAL. CONTINUE. ENDIF.
+          PERFORM parse_cert_into_row USING ls_certdata lv_label 'FILE' iv_today CHANGING ct_certs.
+        ENDLOOP.
+      CATCH cx_root.
+        CONTINUE.
+    ENDTRY.
+  ENDLOOP.
+ENDFORM.
+
+*--- HELPER: parse one X.509 blob and append a row to lt_certs ---*
+FORM parse_cert_into_row USING iv_blob   TYPE xstring
+                               iv_label  TYPE string
+                               iv_role   TYPE string
+                               iv_today  TYPE d
+                      CHANGING ct_certs  TYPE ANY TABLE.
+  DATA: lv_subject TYPE string,
+        lv_issuer  TYPE string,
+        lv_serial  TYPE string,
+        lv_from    TYPE d,
+        lv_to      TYPE d,
+        ls_cert    TYPE ty_cert_info.
+
+  CLEAR: lv_subject, lv_issuer, lv_serial, lv_from, lv_to, ls_cert.
+
+  CALL FUNCTION 'SSFC_PARSE_CERTIFICATE'
+    EXPORTING  certificate = iv_blob
+    IMPORTING  subject     = lv_subject
+               issuer      = lv_issuer
+               serialno    = lv_serial
+               validfrom   = lv_from
+               validto     = lv_to
+    EXCEPTIONS OTHERS      = 6.
+  IF sy-subrc <> 0.
+    RETURN.
+  ENDIF.
+
+  ls_cert-context = |{ iv_label } [{ iv_role }]|.
+  ls_cert-subject = lv_subject.
+  ls_cert-issuer  = lv_issuer.
+  ls_cert-serial  = lv_serial.
+
+  IF lv_from IS NOT INITIAL.
+    CONCATENATE lv_from(4) '-' lv_from+4(2) '-' lv_from+6(2) INTO ls_cert-valid_from.
+  ENDIF.
+  IF lv_to IS NOT INITIAL.
+    CONCATENATE lv_to(4) '-' lv_to+4(2) '-' lv_to+6(2) INTO ls_cert-valid_to.
+  ENDIF.
+
+  IF lv_to IS NOT INITIAL.
+    ls_cert-days_left = lv_to - iv_today.
+  ENDIF.
+  IF ls_cert-days_left < 0.
+    ls_cert-icon = icon_red_light.
+  ELSEIF ls_cert-days_left < 30.
+    ls_cert-icon = icon_yellow_light.
+  ELSE.
+    ls_cert-icon = icon_green_light.
+  ENDIF.
+
+  INSERT ls_cert INTO TABLE ct_certs.
 ENDFORM.
 
 *--- PROFILE PARAMETERS ---*
@@ -3769,7 +3872,9 @@ FORM f4_tru_file CHANGING cv_path    TYPE string
   CASE lv_first.
     WHEN 'K'. lv_new = |R{ lv_rest }|.
     WHEN 'R'. lv_new = |K{ lv_rest }|.
-    WHEN OTHERS. RETURN.
+    WHEN OTHERS.
+      MESSAGE |File '{ lv_name }' does not start with K or R - sibling auto-fill skipped.| TYPE 'S'.
+      RETURN.
   ENDCASE.
 
   lv_sib_full = |{ lv_dir }{ lv_new }|.
@@ -3781,6 +3886,10 @@ FORM f4_tru_file CHANGING cv_path    TYPE string
 
   IF sy-subrc = 0 AND lv_exists = abap_true.
     cv_sibling = lv_sib_full.
+    MESSAGE |Sibling auto-filled: { lv_new }| TYPE 'S'.
+  ELSE.
+    " Help the tester see why nothing happened.
+    MESSAGE |Sibling '{ lv_new }' not found in '{ lv_dir }' - field left empty.| TYPE 'S'.
   ENDIF.
 ENDFORM.
 
