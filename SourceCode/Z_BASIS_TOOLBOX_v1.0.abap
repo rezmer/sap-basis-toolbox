@@ -492,24 +492,24 @@ INITIALIZATION.
           lv_dbg_origin   TYPE string,
           lv_log_missing  TYPE abap_bool.
 
-    " 3-option popup: With Audit / No Audit / Abort
-    CALL FUNCTION 'POPUP_TO_DECIDE'
+    " 3-option popup: With Audit / No Audit / Abort.
+    " POPUP_TO_DECIDE has only 2 option-text params on most releases, so we
+    " use POPUP_TO_CONFIRM with display_cancel_button = 'X' (answer 'A' = cancel/abort).
+    CALL FUNCTION 'POPUP_TO_CONFIRM'
       EXPORTING
-        defaultoption  = '3'
-        textline1      = '>>> DEBUG MODE will be activated <<<'
-        textline2      = 'Auth checks and PRD restrictions are BYPASSED. Choose wisely.'
-        text_option1   = 'Continue (with Audit)'
-        text_option2   = 'Continue (no Audit)'
-        text_option3   = 'Abort'
-        titel          = '*** Z_BASIS_TOOLBOX - DEBUG MODE ***'
-        cancel_display = 'X'
+        titlebar              = '*** Z_BASIS_TOOLBOX - DEBUG MODE ***'
+        text_question         = '>>> DEBUG MODE will be activated <<< Auth checks and PRD restrictions are BYPASSED. Choose: Continue with Audit, Continue without Audit, or Abort (Cancel).'
+        text_button_1         = 'With Audit'
+        text_button_2         = 'No Audit'
+        default_button        = '1'
+        display_cancel_button = 'X'
       IMPORTING
-        answer         = lv_debug_ans
+        answer                = lv_debug_ans
       EXCEPTIONS
-        OTHERS         = 1.
+        OTHERS                = 1.
 
-    " Abort (Option 3, cancel, or FM error)
-    IF lv_debug_ans = '3' OR lv_debug_ans = 'A' OR sy-subrc <> 0.
+    " Abort (Cancel button -> 'A', Esc -> 'A', or FM error)
+    IF lv_debug_ans = 'A' OR lv_debug_ans IS INITIAL OR sy-subrc <> 0.
       LEAVE PROGRAM.
     ENDIF.
 
