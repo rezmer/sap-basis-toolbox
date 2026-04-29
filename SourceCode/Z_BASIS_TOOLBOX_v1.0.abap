@@ -363,12 +363,12 @@ SELECTION-SCREEN END OF BLOCK b_tru.
 SELECTION-SCREEN BEGIN OF BLOCK b_stm WITH FRAME TITLE tit_stm.
   SELECTION-SCREEN COMMENT /1(79) txt_st1 MODIF ID stm.
   SELECTION-SCREEN BEGIN OF LINE.
-    SELECTION-SCREEN COMMENT 1(25) lbl_stm_sys MODIF ID stm.
-    PARAMETERS: p_stm_sys TYPE tmssysnam DEFAULT sy-sysid MODIF ID stm.
+    SELECTION-SCREEN COMMENT 1(25) lstmsys MODIF ID stm.
+    PARAMETERS: p_stmsys TYPE tmssysnam DEFAULT sy-sysid MODIF ID stm.
   SELECTION-SCREEN END OF LINE.
   SELECTION-SCREEN BEGIN OF LINE.
-    SELECTION-SCREEN COMMENT 1(25) lbl_stm_cli MODIF ID stm.
-    PARAMETERS: p_stm_cli TYPE mandt DEFAULT sy-mandt MODIF ID stm.
+    SELECTION-SCREEN COMMENT 1(25) lstmcli MODIF ID stm.
+    PARAMETERS: p_stmcli TYPE mandt DEFAULT sy-mandt MODIF ID stm.
   SELECTION-SCREEN END OF LINE.
   SELECTION-SCREEN SKIP 1.
   SELECT-OPTIONS s_stm_tr FOR e070-trkorr NO INTERVALS MODIF ID stm.
@@ -482,8 +482,8 @@ INITIALIZATION.
   lbl_tbf = |Add to STMS import buffer of { sy-sysid }/{ sy-mandt } after upload|.
 
   " STMS Buffer (multi-transport) labels
-  lbl_stm_sys = 'Target system:'.
-  lbl_stm_cli = 'Target client:'.
+  lstmsys = 'Target system:'.
+  lstmcli = 'Target client:'.
 
   btn_fm  = 'File Manager'.
   btn_zup = 'Upload Files (as ZIP)'.
@@ -764,7 +764,7 @@ AT SELECTION-SCREEN.
       PERFORM execute_trans_upload.
       CLEAR sscrfields-ucomm.
     ELSEIF gv_mode = c_mode_stm.
-      PERFORM write_audit_log USING c_mod_stm 'STMS_BUFFER_START' p_stm_sys p_stm_cli 'W'.
+      PERFORM write_audit_log USING c_mod_stm 'STMS_BUFFER_START' p_stmsys p_stmcli 'W'.
       PERFORM execute_stms_buffer.
       CLEAR sscrfields-ucomm.
     ELSEIF gv_mode = c_mode_net.
@@ -3071,7 +3071,7 @@ ENDFORM.
 
 *--- EXECUTE STMS BUFFER ADD (multiple transports) ---*
 * Module STM: collect trkorrs from s_stm_tr (Includes/EQ only), forward each
-* to add_to_stms_buffer for the target sys/client (p_stm_sys/p_stm_cli),
+* to add_to_stms_buffer for the target sys/client (p_stmsys/p_stmcli),
 * then show an ALV popup with per-transport result.
 *
 * No PRD block: STMS Buffer Add does not change PRD data. The actual import
@@ -3113,7 +3113,7 @@ FORM execute_stms_buffer.
     lv_trkorr = lv_low.
 
     CLEAR: lv_ok, lv_msg.
-    PERFORM add_to_stms_buffer USING lv_trkorr p_stm_sys p_stm_cli
+    PERFORM add_to_stms_buffer USING lv_trkorr p_stmsys p_stmcli
                             CHANGING lv_ok lv_msg.
 
     CLEAR ls_res.
@@ -3132,7 +3132,7 @@ FORM execute_stms_buffer.
     APPEND ls_res TO lt_res.
 
     " Audit log per transport
-    lv_detail2 = |{ p_stm_sys }/{ p_stm_cli }|.
+    lv_detail2 = |{ p_stmsys }/{ p_stmcli }|.
     PERFORM write_audit_log USING c_mod_stm 'STMS_BUFFER_ADD'
                                   lv_trkorr lv_detail2 lv_severity.
   ENDLOOP.
@@ -3175,7 +3175,7 @@ FORM execute_stms_buffer.
       ENDTRY.
 
       lo_alv->get_display_settings( )->set_list_header(
-        |STMS Buffer Add — Target { p_stm_sys }/{ p_stm_cli } — | &&
+        |STMS Buffer Add — Target { p_stmsys }/{ p_stmcli } — | &&
         |OK: { lv_count_ok } / Errors: { lv_count_err }| ).
 
       lo_alv->display( ).
@@ -3185,9 +3185,9 @@ FORM execute_stms_buffer.
 
   " Summary message after popup closes
   IF lv_count_err = 0.
-    MESSAGE |STMS buffer: { lv_count_ok } transport(s) added to { p_stm_sys }/{ p_stm_cli }.| TYPE 'S'.
+    MESSAGE |STMS buffer: { lv_count_ok } transport(s) added to { p_stmsys }/{ p_stmcli }.| TYPE 'S'.
   ELSE.
-    MESSAGE |STMS buffer: { lv_count_ok } added, { lv_count_err } failed (target { p_stm_sys }/{ p_stm_cli }).| TYPE 'S' DISPLAY LIKE 'W'.
+    MESSAGE |STMS buffer: { lv_count_ok } added, { lv_count_err } failed (target { p_stmsys }/{ p_stmcli }).| TYPE 'S' DISPLAY LIKE 'W'.
   ENDIF.
 ENDFORM.
 
