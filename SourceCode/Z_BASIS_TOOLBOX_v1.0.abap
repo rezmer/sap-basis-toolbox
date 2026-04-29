@@ -3703,14 +3703,16 @@ FORM parse_cert_into_row USING iv_blob   TYPE xstring
                                iv_role   TYPE string
                                iv_today  TYPE d
                       CHANGING ct_certs  TYPE ANY TABLE.
-  " SSFC_PARSE_CERTIFICATE returns VALIDFROM / VALIDTO as SSFTIMESTMP
-  " (CHAR 14, format YYYYMMDDHHMMSS) - NOT as TYPE d. Wrong type causes
-  " CX_SY_DYN_CALL_ILLEGAL_TYPE dump.
+  " SSFC_PARSE_CERTIFICATE returns VALIDFROM / VALIDTO as a CHAR 14
+  " timestamp in format YYYYMMDDHHMMSS - NOT as TYPE d. Wrong type
+  " causes CX_SY_DYN_CALL_ILLEGAL_TYPE dump. The dedicated DDIC type
+  " SSFTIMESTMP is not present on every release, so we declare the
+  " variables locally as plain CHAR 14, which is structurally identical.
   DATA: lv_subject TYPE string,
         lv_issuer  TYPE string,
         lv_serial  TYPE string,
-        lv_from    TYPE ssftimestmp,
-        lv_to      TYPE ssftimestmp,
+        lv_from    TYPE c LENGTH 14,
+        lv_to      TYPE c LENGTH 14,
         lv_from_d  TYPE d,
         lv_to_d    TYPE d,
         ls_cert    TYPE ty_cert_info.
