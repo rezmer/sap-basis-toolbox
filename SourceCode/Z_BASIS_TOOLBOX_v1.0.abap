@@ -368,7 +368,7 @@ SELECTION-SCREEN BEGIN OF BLOCK b_stm WITH FRAME TITLE tit_stm.
   SELECTION-SCREEN END OF LINE.
   SELECTION-SCREEN BEGIN OF LINE.
     SELECTION-SCREEN COMMENT 1(25) lstmcli MODIF ID stm.
-    PARAMETERS: p_stmcli TYPE mandt DEFAULT sy-mandt MODIF ID stm.
+    PARAMETERS: p_stmcli TYPE mandt MODIF ID stm.   " optional - leave blank to let CTS use its default
   SELECTION-SCREEN END OF LINE.
   SELECTION-SCREEN SKIP 1.
   SELECT-OPTIONS s_stm_tr FOR e070-trkorr NO INTERVALS MODIF ID stm.
@@ -483,7 +483,7 @@ INITIALIZATION.
 
   " STMS Buffer (multi-transport) labels
   lstmsys = 'Target system:'.
-  lstmcli = 'Target client:'.
+  lstmcli = 'Target client (optional):'.
 
   btn_fm  = 'File Manager'.
   btn_zup = 'Upload Files (as ZIP)'.
@@ -2908,69 +2908,61 @@ FORM execute_trans_upload.
 ENDFORM.
 
 *--- PARSE TRANSPORT ID FROM K-FILENAME ---*
-* Input:  /path/to/K902985.EW3 (or plain K902985.EW3)
+* Input:  /path/to/K902985.EW3 (or C:\foo\K902985.EW3, or plain K902985.EW3)
 * Output: EW3K902985
+*
+* Implementation note: previous offset-based versions failed on TYPE
+* string in some releases (`iv_path+lv_pos` returned the whole string
+* instead of the substring after the last separator). This rewrite uses
+* SPLIT exclusively — no offset arithmetic on TYPE string at all.
 FORM parse_trkorr_from_k USING iv_path TYPE string
                       CHANGING cv_trkorr TYPE string.
-  DATA: lv_name    TYPE string,
-        lv_sep     TYPE c LENGTH 1,
-        lv_pos     TYPE i,
-        lv_dot     TYPE i,
-        lv_num     TYPE string,
-        lv_sid     TYPE string,
-        lv_len     TYPE i,
-        lv_num_len TYPE i,
-        lt_match   TYPE match_result_tab.
+  DATA: lv_norm  TYPE string,
+        lv_name  TYPE string,
+        lv_seg   TYPE string,
+        lv_num   TYPE string,
+        lv_sid   TYPE string,
+        lt_seg   TYPE STANDARD TABLE OF string,
+        lt_dot   TYPE STANDARD TABLE OF string.
 
   CLEAR cv_trkorr.
-  IF iv_path CS '\'.
-    lv_sep = '\'.
-  ELSE.
-    lv_sep = '/'.
-  ENDIF.
 
-  " Get offset of LAST separator (no FIND LAST OCCURRENCE in classic ABAP).
-  " IMPORTANT: bare `iv_path+lv_pos` (without explicit length) on a TYPE
-  " string variable does NOT reliably extract substring-to-end across
-  " releases — it can yield the whole string. Always use substring( ).
-  FIND ALL OCCURRENCES OF lv_sep IN iv_path RESULTS lt_match.
-  IF lt_match IS NOT INITIAL.
-    lv_pos = lt_match[ lines( lt_match ) ]-offset + 1.
-    lv_name = substring( val = iv_path off = lv_pos ).
-  ELSE.
-    lv_name = iv_path.
+  " Step 1 - strip directory: normalize backslashes to forward slashes,
+  " then keep the last non-empty segment after splitting at '/'.
+  lv_norm = iv_path.
+  REPLACE ALL OCCURRENCES OF '\' IN lv_norm WITH '/'.
+  SPLIT lv_norm AT '/' INTO TABLE lt_seg.
+  LOOP AT lt_seg INTO lv_seg.
+    IF lv_seg IS NOT INITIAL.
+      lv_name = lv_seg.
+    ENDIF.
+  ENDLOOP.
+  IF lv_name IS INITIAL.
+    RETURN.
   ENDIF.
-
   TRANSLATE lv_name TO UPPER CASE.
-  lv_len = strlen( lv_name ).
 
-  " Strict format: K<digits>.<3-char-SID>  (e.g. K902985.EW3)
-  " Anything else (custom names, duplicate transports, no extension) is rejected
-  " so we never feed garbage like "D66K_TRANSPORT1@2A1A" into TMS_MGR_FORWARD.
-  IF lv_len < 5 OR lv_name(1) <> 'K'.
+  " Step 2 - filename must split at '.' into exactly two parts:
+  "          [<K-part>, <SID>]  e.g. ['K901061', 'TWR']
+  SPLIT lv_name AT '.' INTO TABLE lt_dot.
+  IF lines( lt_dot ) <> 2.
     RETURN.
   ENDIF.
+  READ TABLE lt_dot INTO lv_num INDEX 1.
+  READ TABLE lt_dot INTO lv_sid INDEX 2.
 
-  lv_dot = 0.
-  FIND '.' IN lv_name MATCH OFFSET lv_dot.
-  IF sy-subrc <> 0 OR lv_dot < 2.
+  " Step 3 - K-part: must be 'K' followed by digits.
+  IF strlen( lv_num ) < 2 OR lv_num(1) <> 'K'.
     RETURN.
   ENDIF.
-
-  " Same TYPE-string substring rule applies here.
-  lv_num_len = lv_dot - 1.
-  lv_num = substring( val = lv_name off = 1 len = lv_num_len ).
-  lv_dot = lv_dot + 1.
-  lv_sid = substring( val = lv_name off = lv_dot ).
-
-  " Validate: number part is purely digits, SID is exactly 3 alphanumeric chars
-  IF strlen( lv_sid ) <> 3.
-    RETURN.
-  ENDIF.
+  SHIFT lv_num LEFT BY 1 PLACES.
   IF lv_num IS INITIAL OR NOT lv_num CO '0123456789'.
     RETURN.
   ENDIF.
-  IF NOT lv_sid CO 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'.
+
+  " Step 4 - SID: exactly 3 alphanumeric chars.
+  IF strlen( lv_sid ) <> 3
+  OR NOT lv_sid CO 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'.
     RETURN.
   ENDIF.
 
