@@ -2929,11 +2929,14 @@ FORM parse_trkorr_from_k USING iv_path TYPE string
     lv_sep = '/'.
   ENDIF.
 
-  " Get offset of LAST separator (no FIND LAST OCCURRENCE in classic ABAP)
+  " Get offset of LAST separator (no FIND LAST OCCURRENCE in classic ABAP).
+  " IMPORTANT: bare `iv_path+lv_pos` (without explicit length) on a TYPE
+  " string variable does NOT reliably extract substring-to-end across
+  " releases — it can yield the whole string. Always use substring( ).
   FIND ALL OCCURRENCES OF lv_sep IN iv_path RESULTS lt_match.
   IF lt_match IS NOT INITIAL.
     lv_pos = lt_match[ lines( lt_match ) ]-offset + 1.
-    lv_name = iv_path+lv_pos.
+    lv_name = substring( val = iv_path off = lv_pos ).
   ELSE.
     lv_name = iv_path.
   ENDIF.
@@ -2954,11 +2957,11 @@ FORM parse_trkorr_from_k USING iv_path TYPE string
     RETURN.
   ENDIF.
 
-  " Substring length must be a single variable, not an expression.
+  " Same TYPE-string substring rule applies here.
   lv_num_len = lv_dot - 1.
-  lv_num = lv_name+1(lv_num_len).
+  lv_num = substring( val = lv_name off = 1 len = lv_num_len ).
   lv_dot = lv_dot + 1.
-  lv_sid = lv_name+lv_dot.
+  lv_sid = substring( val = lv_name off = lv_dot ).
 
   " Validate: number part is purely digits, SID is exactly 3 alphanumeric chars
   IF strlen( lv_sid ) <> 3.
@@ -3057,49 +3060,61 @@ FORM add_to_stms_buffer USING iv_trkorr  TYPE clike
     RETURN.
   ENDIF.
 
-  " On most NetWeaver releases the mandatory target parameter of
-  " TMS_MGR_FORWARD_TR_REQUEST is named IV_TARGET (not IV_TARGET_SYSTEM).
-  " A few older releases use IV_TARGET_SYSTEM. We try IV_TARGET first
-  " and fall back to IV_TARGET_SYSTEM via cx_sy_dyn_call_error.
+  " TMS_MGR_FORWARD_TR_REQUEST signatures vary by release:
+  "  - Most releases: IV_REQUEST + IV_TARGET (TMSSYSNAM)
+  "  - Some legacy releases: IV_REQUEST + IV_TARGET_SYSTEM
+  " We try IV_TARGET first; if that fails (cx_sy_dyn_call_error of any
+  " kind), fall back to IV_TARGET_SYSTEM. Optional client param is omitted
+  " entirely — its name varies (IV_TAR_CLI, IV_CLIENT, IV_TARGET_CLIENT)
+  " and TMS routes by RFC destination anyway.
+  DATA: lv_fwd1_msg TYPE string,
+        lv_fwd2_msg TYPE string.
+
   TRY.
       CALL FUNCTION 'TMS_MGR_FORWARD_TR_REQUEST'
         EXPORTING
           iv_request = lv_trkorr
           iv_target  = lv_target
-          iv_tar_cli = lv_client
         EXCEPTIONS
           OTHERS     = 99.
       IF sy-subrc = 0.
         cv_ok  = abap_true.
-        cv_msg = |Added { lv_trkorr } to buffer of { lv_target }/{ lv_client } (via FORWARD)|.
+        cv_msg = |Added { lv_trkorr } to buffer of { lv_target } (via FORWARD/IV_TARGET)|.
         RETURN.
       ELSE.
-        cv_msg = |Both IMPORT and FORWARD failed for { lv_trkorr } (FORWARD rc={ sy-subrc }; { lv_import_msg }). Check S_CTS_ADMI/IMPS and TMS configuration.|.
+        lv_fwd1_msg = |IV_TARGET rc={ sy-subrc }|.
       ENDIF.
-    CATCH cx_sy_dyn_call_error.
-      " Fall back to legacy parameter name on older releases
-      TRY.
-          CALL FUNCTION 'TMS_MGR_FORWARD_TR_REQUEST'
-            EXPORTING
-              iv_request       = lv_trkorr
-              iv_target_system = lv_target
-            EXCEPTIONS
-              OTHERS           = 99.
-          IF sy-subrc = 0.
-            cv_ok  = abap_true.
-            cv_msg = |Added { lv_trkorr } to buffer of { lv_target } (via legacy FORWARD)|.
-            RETURN.
-          ELSE.
-            cv_msg = |Both IMPORT and FORWARD failed for { lv_trkorr } (FORWARD rc={ sy-subrc }; { lv_import_msg }). Check S_CTS_ADMI/IMPS.|.
-          ENDIF.
-        CATCH cx_sy_dyn_call_error INTO DATA(lx_fwd_dyn).
-          cv_msg = |FORWARD param mismatch on both signatures: { lx_fwd_dyn->get_text( ) }; { lv_import_msg }|.
-        CATCH cx_root INTO DATA(lx_fwd_legacy).
-          cv_msg = |FORWARD legacy exception: { lx_fwd_legacy->get_text( ) }; { lv_import_msg }|.
-      ENDTRY.
-    CATCH cx_root INTO DATA(lx_fwd).
-      cv_msg = |FORWARD exception: { lx_fwd->get_text( ) }; { lv_import_msg }|.
+    CATCH cx_sy_dyn_call_error INTO DATA(lx_fwd1_dyn).
+      lv_fwd1_msg = |IV_TARGET dyn-call: { lx_fwd1_dyn->get_text( ) }|.
+    CATCH cx_root INTO DATA(lx_fwd1).
+      lv_fwd1_msg = |IV_TARGET exception: { lx_fwd1->get_text( ) }|.
   ENDTRY.
+
+  " Legacy fallback signature
+  TRY.
+      CALL FUNCTION 'TMS_MGR_FORWARD_TR_REQUEST'
+        EXPORTING
+          iv_request       = lv_trkorr
+          iv_target_system = lv_target
+        EXCEPTIONS
+          OTHERS           = 99.
+      IF sy-subrc = 0.
+        cv_ok  = abap_true.
+        cv_msg = |Added { lv_trkorr } to buffer of { lv_target } (via legacy FORWARD/IV_TARGET_SYSTEM)|.
+        RETURN.
+      ELSE.
+        lv_fwd2_msg = |IV_TARGET_SYSTEM rc={ sy-subrc }|.
+      ENDIF.
+    CATCH cx_sy_dyn_call_error INTO DATA(lx_fwd2_dyn).
+      lv_fwd2_msg = |IV_TARGET_SYSTEM dyn-call: { lx_fwd2_dyn->get_text( ) }|.
+    CATCH cx_root INTO DATA(lx_fwd2).
+      lv_fwd2_msg = |IV_TARGET_SYSTEM exception: { lx_fwd2->get_text( ) }|.
+  ENDTRY.
+
+  cv_msg = |Both FORWARD signatures failed for { lv_trkorr } (target { lv_target }). | &&
+           |[1] { lv_fwd1_msg } | &&
+           |[2] { lv_fwd2_msg } | &&
+           |IMPORT: { lv_import_msg }. Check S_CTS_ADMI/IMPS and TMS configuration.|.
 ENDFORM.
 
 *--- EXECUTE STMS BUFFER ADD (multiple transports) ---*
