@@ -2938,6 +2938,8 @@ FORM parse_trkorr_from_k USING iv_path TYPE string
     ENDIF.
   ENDLOOP.
   IF lv_name IS INITIAL.
+    PERFORM write_audit_log USING c_mod_tru 'PARSE_DBG' iv_path
+      |step1: lv_name empty after split (norm=[{ lv_norm }] segs={ lines( lt_seg ) })| 'I'.
     RETURN.
   ENDIF.
   TRANSLATE lv_name TO UPPER CASE.
@@ -2946,28 +2948,40 @@ FORM parse_trkorr_from_k USING iv_path TYPE string
   "          [<K-part>, <SID>]  e.g. ['K901061', 'TWR']
   SPLIT lv_name AT '.' INTO TABLE lt_dot.
   IF lines( lt_dot ) <> 2.
+    PERFORM write_audit_log USING c_mod_tru 'PARSE_DBG' iv_path
+      |step2: name=[{ lv_name }] dot-parts={ lines( lt_dot ) } (expected 2)| 'I'.
     RETURN.
   ENDIF.
   READ TABLE lt_dot INTO lv_num INDEX 1.
   READ TABLE lt_dot INTO lv_sid INDEX 2.
 
-  " Step 3 - K-part: must be 'K' followed by digits.
+  " Step 3 - K-part: must be 'K' followed by digits. Use REPLACE (not
+  " SHIFT) to strip the leading 'K' — SHIFT on TYPE string behaves
+  " differently across releases.
   IF strlen( lv_num ) < 2 OR lv_num(1) <> 'K'.
+    PERFORM write_audit_log USING c_mod_tru 'PARSE_DBG' iv_path
+      |step3a: K-part=[{ lv_num }] len={ strlen( lv_num ) } first=[{ lv_num(1) }]| 'I'.
     RETURN.
   ENDIF.
-  SHIFT lv_num LEFT BY 1 PLACES.
+  REPLACE FIRST OCCURRENCE OF 'K' IN lv_num WITH ''.
   IF lv_num IS INITIAL OR NOT lv_num CO '0123456789'.
+    PERFORM write_audit_log USING c_mod_tru 'PARSE_DBG' iv_path
+      |step3b: digits=[{ lv_num }] (must be all 0-9)| 'I'.
     RETURN.
   ENDIF.
 
   " Step 4 - SID: exactly 3 alphanumeric chars.
   IF strlen( lv_sid ) <> 3
   OR NOT lv_sid CO 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'.
+    PERFORM write_audit_log USING c_mod_tru 'PARSE_DBG' iv_path
+      |step4: sid=[{ lv_sid }] len={ strlen( lv_sid ) }| 'I'.
     RETURN.
   ENDIF.
 
   " Final length check (TRKORR is CHAR 20)
   IF strlen( lv_sid ) + 1 + strlen( lv_num ) > 20.
+    PERFORM write_audit_log USING c_mod_tru 'PARSE_DBG' iv_path
+      |step5: trkorr too long sid=[{ lv_sid }] num=[{ lv_num }]| 'I'.
     RETURN.
   ENDIF.
 
@@ -2988,7 +3002,6 @@ FORM add_to_stms_buffer USING iv_trkorr  TYPE clike
   DATA: lv_trkorr  TYPE trkorr,
         lv_target  TYPE tmssysnam,
         lv_client  TYPE mandt,
-        lv_done    TYPE abap_bool VALUE abap_false,
         lv_import_msg TYPE string.
 
   cv_ok  = abap_false.
@@ -3004,6 +3017,11 @@ FORM add_to_stms_buffer USING iv_trkorr  TYPE clike
   ENDIF.
 
   " --- Attempt 1: TMS_MGR_IMPORT_TR_REQUEST ---
+  " Parameter naming varies across releases. We try the two common
+  " signatures in order and capture the rejection text for each.
+  DATA: lv_imp1_msg TYPE string,
+        lv_imp2_msg TYPE string.
+
   CALL FUNCTION 'FUNCTION_EXISTS'
     EXPORTING
       funcname           = 'TMS_MGR_IMPORT_TR_REQUEST'
@@ -3011,6 +3029,7 @@ FORM add_to_stms_buffer USING iv_trkorr  TYPE clike
       function_not_exist = 1
       OTHERS             = 2.
   IF sy-subrc = 0.
+    " Variant A: iv_system + iv_tr_request + iv_client + iv_monitor
     TRY.
         CALL FUNCTION 'TMS_MGR_IMPORT_TR_REQUEST'
           EXPORTING
@@ -3022,22 +3041,42 @@ FORM add_to_stms_buffer USING iv_trkorr  TYPE clike
             OTHERS        = 99.
         IF sy-subrc = 0.
           cv_ok   = abap_true.
-          cv_msg  = |Added { lv_trkorr } to buffer of { lv_target }/{ lv_client }|.
-          lv_done = abap_true.
+          cv_msg  = |Added { lv_trkorr } to buffer of { lv_target }/{ lv_client } (via IMPORT/iv_tr_request)|.
+          RETURN.
         ELSE.
-          lv_import_msg = |IMPORT rc={ sy-subrc }|.
+          lv_imp1_msg = |IMPORT.A rc={ sy-subrc }|.
         ENDIF.
-      CATCH cx_sy_dyn_call_error INTO DATA(lx_imp_dyn).
-        lv_import_msg = |IMPORT param mismatch: { lx_imp_dyn->get_text( ) }|.
-      CATCH cx_root INTO DATA(lx_imp).
-        lv_import_msg = |IMPORT exception: { lx_imp->get_text( ) }|.
+      CATCH cx_sy_dyn_call_error INTO DATA(lx_imp1_dyn).
+        lv_imp1_msg = |IMPORT.A dyn-call: { lx_imp1_dyn->get_text( ) }|.
+      CATCH cx_root INTO DATA(lx_imp1).
+        lv_imp1_msg = |IMPORT.A exception: { lx_imp1->get_text( ) }|.
     ENDTRY.
+
+    " Variant B: iv_system + iv_request + iv_client (no monitor)
+    TRY.
+        CALL FUNCTION 'TMS_MGR_IMPORT_TR_REQUEST'
+          EXPORTING
+            iv_system  = lv_target
+            iv_request = lv_trkorr
+            iv_client  = lv_client
+          EXCEPTIONS
+            OTHERS     = 99.
+        IF sy-subrc = 0.
+          cv_ok   = abap_true.
+          cv_msg  = |Added { lv_trkorr } to buffer of { lv_target }/{ lv_client } (via IMPORT/iv_request)|.
+          RETURN.
+        ELSE.
+          lv_imp2_msg = |IMPORT.B rc={ sy-subrc }|.
+        ENDIF.
+      CATCH cx_sy_dyn_call_error INTO DATA(lx_imp2_dyn).
+        lv_imp2_msg = |IMPORT.B dyn-call: { lx_imp2_dyn->get_text( ) }|.
+      CATCH cx_root INTO DATA(lx_imp2).
+        lv_imp2_msg = |IMPORT.B exception: { lx_imp2->get_text( ) }|.
+    ENDTRY.
+
+    lv_import_msg = |[A] { lv_imp1_msg } [B] { lv_imp2_msg }|.
   ELSE.
     lv_import_msg = 'IMPORT FM not present'.
-  ENDIF.
-
-  IF lv_done = abap_true.
-    RETURN.
   ENDIF.
 
   " --- Attempt 2 (fallback): TMS_MGR_FORWARD_TR_REQUEST ---
@@ -3071,7 +3110,9 @@ FORM add_to_stms_buffer USING iv_trkorr  TYPE clike
           OTHERS     = 99.
       IF sy-subrc = 0.
         cv_ok  = abap_true.
-        cv_msg = |Added { lv_trkorr } to buffer of { lv_target } (via FORWARD/IV_TARGET)|.
+        cv_msg = |FORWARD/IV_TARGET reported OK for { lv_trkorr } -> { lv_target }. | &&
+                 |WARNING: FORWARD only adds to buffer when a TMS route exists. | &&
+                 |Verify in STMS Imports of { lv_target }. IMPORT errors: { lv_import_msg }|.
         RETURN.
       ELSE.
         lv_fwd1_msg = |IV_TARGET rc={ sy-subrc }|.
@@ -3092,7 +3133,8 @@ FORM add_to_stms_buffer USING iv_trkorr  TYPE clike
           OTHERS           = 99.
       IF sy-subrc = 0.
         cv_ok  = abap_true.
-        cv_msg = |Added { lv_trkorr } to buffer of { lv_target } (via legacy FORWARD/IV_TARGET_SYSTEM)|.
+        cv_msg = |FORWARD/IV_TARGET_SYSTEM (legacy) reported OK for { lv_trkorr } -> { lv_target }. | &&
+                 |WARNING: verify in STMS Imports of { lv_target }. IMPORT errors: { lv_import_msg }|.
         RETURN.
       ELSE.
         lv_fwd2_msg = |IV_TARGET_SYSTEM rc={ sy-subrc }|.
