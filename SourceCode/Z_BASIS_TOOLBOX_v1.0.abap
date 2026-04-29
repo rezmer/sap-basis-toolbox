@@ -2832,15 +2832,16 @@ FORM execute_trans_upload.
     MESSAGE 'Transport upload is blocked on productive systems. Use TMS/CTS.' TYPE 'S' DISPLAY LIKE 'E'.
     RETURN.
   ENDIF.
-  DATA: lv_base    TYPE string,
-        lv_done    TYPE i,
-        lt_k_paths TYPE STANDARD TABLE OF string,
-        lt_trkorrs TYPE STANDARD TABLE OF string,
-        lv_trkorr  TYPE string,
-        lv_buf_ok  TYPE i,
-        lv_buf_err TYPE i,
-        lv_bmsg    TYPE string,
-        lv_ok      TYPE abap_bool.
+  DATA: lv_base       TYPE string,
+        lv_done       TYPE i,
+        lt_k_paths    TYPE STANDARD TABLE OF string,
+        lt_trkorrs    TYPE STANDARD TABLE OF string,
+        lv_trkorr     TYPE string,
+        lv_buf_ok     TYPE i,
+        lv_buf_err    TYPE i,
+        lv_buf_unparsed TYPE i,
+        lv_bmsg       TYPE string,
+        lv_ok         TYPE abap_bool.
 
   lv_base = p_tru_td.
   IF substring( val = lv_base off = strlen( lv_base ) - 1 ) <> '/'.
@@ -2863,6 +2864,9 @@ FORM execute_trans_upload.
       CLEAR lv_trkorr.
       PERFORM parse_trkorr_from_k USING lv_kp CHANGING lv_trkorr.
       IF lv_trkorr IS INITIAL.
+        ADD 1 TO lv_buf_unparsed.
+        " Audit so we can see which path the strict parser rejected.
+        PERFORM write_audit_log USING c_mod_tru 'STMS_BUFFER_PARSE_FAIL' lv_kp 'expected K<digits>.<SID>' 'W'.
         CONTINUE.
       ENDIF.
       READ TABLE lt_trkorrs TRANSPORTING NO FIELDS WITH KEY table_line = lv_trkorr.
@@ -2891,6 +2895,10 @@ FORM execute_trans_upload.
       MESSAGE |Upload: { lv_done } files. STMS buffer add FAILED for all transports (check audit log / S_CTS_ADMI).| TYPE 'S' DISPLAY LIKE 'W'.
     ELSEIF lv_buf_ok > 0.
       MESSAGE |Upload: { lv_done } files. { lv_buf_ok } transport(s) added to STMS buffer of { sy-sysid }.| TYPE 'S'.
+    ELSEIF lt_k_paths IS INITIAL.
+      MESSAGE |Upload: { lv_done } files. Buffer add skipped: no Co-File (K...) was selected.| TYPE 'S' DISPLAY LIKE 'W'.
+    ELSEIF lv_buf_unparsed > 0.
+      MESSAGE |Upload: { lv_done } files. { lv_buf_unparsed } K-file(s) did not match K<digits>.<SID> - cannot derive trkorr (check audit log).| TYPE 'S' DISPLAY LIKE 'W'.
     ELSE.
       MESSAGE |Upload: { lv_done } files. No K-files detected for buffer add.| TYPE 'S' DISPLAY LIKE 'W'.
     ENDIF.
@@ -3049,21 +3057,46 @@ FORM add_to_stms_buffer USING iv_trkorr  TYPE clike
     RETURN.
   ENDIF.
 
+  " On most NetWeaver releases the mandatory target parameter of
+  " TMS_MGR_FORWARD_TR_REQUEST is named IV_TARGET (not IV_TARGET_SYSTEM).
+  " A few older releases use IV_TARGET_SYSTEM. We try IV_TARGET first
+  " and fall back to IV_TARGET_SYSTEM via cx_sy_dyn_call_error.
   TRY.
       CALL FUNCTION 'TMS_MGR_FORWARD_TR_REQUEST'
         EXPORTING
-          iv_request       = lv_trkorr
-          iv_target_system = lv_target
+          iv_request = lv_trkorr
+          iv_target  = lv_target
+          iv_tar_cli = lv_client
         EXCEPTIONS
-          OTHERS           = 99.
+          OTHERS     = 99.
       IF sy-subrc = 0.
         cv_ok  = abap_true.
-        cv_msg = |Added { lv_trkorr } to buffer of { lv_target } (via FORWARD fallback)|.
+        cv_msg = |Added { lv_trkorr } to buffer of { lv_target }/{ lv_client } (via FORWARD)|.
+        RETURN.
       ELSE.
         cv_msg = |Both IMPORT and FORWARD failed for { lv_trkorr } (FORWARD rc={ sy-subrc }; { lv_import_msg }). Check S_CTS_ADMI/IMPS and TMS configuration.|.
       ENDIF.
-    CATCH cx_sy_dyn_call_error INTO DATA(lx_fwd_dyn).
-      cv_msg = |FORWARD param mismatch: { lx_fwd_dyn->get_text( ) }; { lv_import_msg }|.
+    CATCH cx_sy_dyn_call_error.
+      " Fall back to legacy parameter name on older releases
+      TRY.
+          CALL FUNCTION 'TMS_MGR_FORWARD_TR_REQUEST'
+            EXPORTING
+              iv_request       = lv_trkorr
+              iv_target_system = lv_target
+            EXCEPTIONS
+              OTHERS           = 99.
+          IF sy-subrc = 0.
+            cv_ok  = abap_true.
+            cv_msg = |Added { lv_trkorr } to buffer of { lv_target } (via legacy FORWARD)|.
+            RETURN.
+          ELSE.
+            cv_msg = |Both IMPORT and FORWARD failed for { lv_trkorr } (FORWARD rc={ sy-subrc }; { lv_import_msg }). Check S_CTS_ADMI/IMPS.|.
+          ENDIF.
+        CATCH cx_sy_dyn_call_error INTO DATA(lx_fwd_dyn).
+          cv_msg = |FORWARD param mismatch on both signatures: { lx_fwd_dyn->get_text( ) }; { lv_import_msg }|.
+        CATCH cx_root INTO DATA(lx_fwd_legacy).
+          cv_msg = |FORWARD legacy exception: { lx_fwd_legacy->get_text( ) }; { lv_import_msg }|.
+      ENDTRY.
     CATCH cx_root INTO DATA(lx_fwd).
       cv_msg = |FORWARD exception: { lx_fwd->get_text( ) }; { lv_import_msg }|.
   ENDTRY.
