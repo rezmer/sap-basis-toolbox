@@ -2922,6 +2922,7 @@ FORM parse_trkorr_from_k USING iv_path TYPE string
         lv_seg   TYPE string,
         lv_num   TYPE string,
         lv_sid   TYPE string,
+        lv_dbg   TYPE string,
         lt_seg   TYPE STANDARD TABLE OF string,
         lt_dot   TYPE STANDARD TABLE OF string.
 
@@ -2938,8 +2939,8 @@ FORM parse_trkorr_from_k USING iv_path TYPE string
     ENDIF.
   ENDLOOP.
   IF lv_name IS INITIAL.
-    PERFORM write_audit_log USING c_mod_tru 'PARSE_DBG' iv_path
-      |step1: lv_name empty after split (norm=[{ lv_norm }] segs={ lines( lt_seg ) })| 'I'.
+    lv_dbg = |step1: lv_name empty after split (norm=[{ lv_norm }] segs={ lines( lt_seg ) })|.
+    PERFORM write_audit_log USING c_mod_tru 'PARSE_DBG' iv_path lv_dbg 'I'.
     RETURN.
   ENDIF.
   TRANSLATE lv_name TO UPPER CASE.
@@ -2948,8 +2949,8 @@ FORM parse_trkorr_from_k USING iv_path TYPE string
   "          [<K-part>, <SID>]  e.g. ['K901061', 'TWR']
   SPLIT lv_name AT '.' INTO TABLE lt_dot.
   IF lines( lt_dot ) <> 2.
-    PERFORM write_audit_log USING c_mod_tru 'PARSE_DBG' iv_path
-      |step2: name=[{ lv_name }] dot-parts={ lines( lt_dot ) } (expected 2)| 'I'.
+    lv_dbg = |step2: name=[{ lv_name }] dot-parts={ lines( lt_dot ) } (expected 2)|.
+    PERFORM write_audit_log USING c_mod_tru 'PARSE_DBG' iv_path lv_dbg 'I'.
     RETURN.
   ENDIF.
   READ TABLE lt_dot INTO lv_num INDEX 1.
@@ -2959,29 +2960,29 @@ FORM parse_trkorr_from_k USING iv_path TYPE string
   " SHIFT) to strip the leading 'K' — SHIFT on TYPE string behaves
   " differently across releases.
   IF strlen( lv_num ) < 2 OR lv_num(1) <> 'K'.
-    PERFORM write_audit_log USING c_mod_tru 'PARSE_DBG' iv_path
-      |step3a: K-part=[{ lv_num }] len={ strlen( lv_num ) } first=[{ lv_num(1) }]| 'I'.
+    lv_dbg = |step3a: K-part=[{ lv_num }] len={ strlen( lv_num ) }|.
+    PERFORM write_audit_log USING c_mod_tru 'PARSE_DBG' iv_path lv_dbg 'I'.
     RETURN.
   ENDIF.
   REPLACE FIRST OCCURRENCE OF 'K' IN lv_num WITH ''.
   IF lv_num IS INITIAL OR NOT lv_num CO '0123456789'.
-    PERFORM write_audit_log USING c_mod_tru 'PARSE_DBG' iv_path
-      |step3b: digits=[{ lv_num }] (must be all 0-9)| 'I'.
+    lv_dbg = |step3b: digits=[{ lv_num }] (must be all 0-9)|.
+    PERFORM write_audit_log USING c_mod_tru 'PARSE_DBG' iv_path lv_dbg 'I'.
     RETURN.
   ENDIF.
 
   " Step 4 - SID: exactly 3 alphanumeric chars.
   IF strlen( lv_sid ) <> 3
   OR NOT lv_sid CO 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'.
-    PERFORM write_audit_log USING c_mod_tru 'PARSE_DBG' iv_path
-      |step4: sid=[{ lv_sid }] len={ strlen( lv_sid ) }| 'I'.
+    lv_dbg = |step4: sid=[{ lv_sid }] len={ strlen( lv_sid ) }|.
+    PERFORM write_audit_log USING c_mod_tru 'PARSE_DBG' iv_path lv_dbg 'I'.
     RETURN.
   ENDIF.
 
   " Final length check (TRKORR is CHAR 20)
   IF strlen( lv_sid ) + 1 + strlen( lv_num ) > 20.
-    PERFORM write_audit_log USING c_mod_tru 'PARSE_DBG' iv_path
-      |step5: trkorr too long sid=[{ lv_sid }] num=[{ lv_num }]| 'I'.
+    lv_dbg = |step5: trkorr too long sid=[{ lv_sid }] num=[{ lv_num }]|.
+    PERFORM write_audit_log USING c_mod_tru 'PARSE_DBG' iv_path lv_dbg 'I'.
     RETURN.
   ENDIF.
 
