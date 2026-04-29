@@ -2977,9 +2977,9 @@ ENDFORM.
 * from sapabapcentral.blogspot.com/2017/09 - parameters iv_system / iv_tr_request /
 * iv_client). Fall back to TMS_MGR_FORWARD_TR_REQUEST when IMPORT is not present
 * or signals an unsupported parameter (older NW releases).
-FORM add_to_stms_buffer USING iv_trkorr  TYPE string
-                              iv_tgt_sys TYPE tmssysnam
-                              iv_tgt_cli TYPE mandt
+FORM add_to_stms_buffer USING iv_trkorr  TYPE clike
+                              iv_tgt_sys TYPE clike
+                              iv_tgt_cli TYPE clike
                      CHANGING cv_ok      TYPE abap_bool
                               cv_msg     TYPE string.
   DATA: lv_trkorr  TYPE trkorr,
