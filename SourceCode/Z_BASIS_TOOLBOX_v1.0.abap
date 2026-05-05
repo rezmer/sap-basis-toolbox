@@ -2991,19 +2991,30 @@ ENDFORM.
 
 *--- ADD TRKORR TO STMS IMPORT BUFFER ---*
 * Requires S_CTS_ADMI with CTS_ADMFCT = IMPS at runtime.
-* Strategy: try TMS_MGR_IMPORT_TR_REQUEST first (matches the working pattern
-* from sapabapcentral.blogspot.com/2017/09 - parameters iv_system / iv_tr_request /
-* iv_client). Fall back to TMS_MGR_FORWARD_TR_REQUEST when IMPORT is not present
-* or signals an unsupported parameter (older NW releases).
+*
+* Verified working signature on this customer's release (S/4 SAP_BASIS):
+*   TMS_MGR_FORWARD_TR_REQUEST
+*     iv_request      = trkorr
+*     iv_target       = target system (TMSSYSNAM)
+*     iv_tarcli       = target client  (MANDT)
+*     iv_import_again = 'X'   <-- critical: re-queues even if already
+*                                  imported elsewhere; without it the FM
+*                                  silently no-ops.
+*   exceptions: read_config_failed=1, table_of_requests_is_empty=2, OTHERS=3
+*
+* TMS_MGR_IMPORT_TR_REQUEST appeared to "succeed" (rc=0, tp ran in status
+* bar) but the import buffer stayed empty — so we drop it. If the primary
+* signature throws cx_sy_dyn_call_error on an older release, we fall back
+* to a minimal IV_REQUEST + IV_TARGET signature.
 FORM add_to_stms_buffer USING iv_trkorr  TYPE clike
                               iv_tgt_sys TYPE clike
                               iv_tgt_cli TYPE clike
                      CHANGING cv_ok      TYPE abap_bool
                               cv_msg     TYPE string.
-  DATA: lv_trkorr  TYPE trkorr,
-        lv_target  TYPE tmssysnam,
-        lv_client  TYPE mandt,
-        lv_import_msg TYPE string.
+  DATA: lv_trkorr TYPE trkorr,
+        lv_target TYPE tmssysnam,
+        lv_client TYPE mandt,
+        lv_diag   TYPE string.
 
   cv_ok  = abap_false.
   cv_msg = ''.
@@ -3017,70 +3028,6 @@ FORM add_to_stms_buffer USING iv_trkorr  TYPE clike
     lv_client = sy-mandt.
   ENDIF.
 
-  " --- Attempt 1: TMS_MGR_IMPORT_TR_REQUEST ---
-  " Parameter naming varies across releases. We try the two common
-  " signatures in order and capture the rejection text for each.
-  DATA: lv_imp1_msg TYPE string,
-        lv_imp2_msg TYPE string.
-
-  CALL FUNCTION 'FUNCTION_EXISTS'
-    EXPORTING
-      funcname           = 'TMS_MGR_IMPORT_TR_REQUEST'
-    EXCEPTIONS
-      function_not_exist = 1
-      OTHERS             = 2.
-  IF sy-subrc = 0.
-    " Variant A: iv_system + iv_tr_request + iv_client + iv_monitor
-    TRY.
-        CALL FUNCTION 'TMS_MGR_IMPORT_TR_REQUEST'
-          EXPORTING
-            iv_system     = lv_target
-            iv_tr_request = lv_trkorr
-            iv_client     = lv_client
-            iv_monitor    = abap_false
-          EXCEPTIONS
-            OTHERS        = 99.
-        IF sy-subrc = 0.
-          cv_ok   = abap_true.
-          cv_msg  = |Added { lv_trkorr } to buffer of { lv_target }/{ lv_client } (via IMPORT/iv_tr_request)|.
-          RETURN.
-        ELSE.
-          lv_imp1_msg = |IMPORT.A rc={ sy-subrc }|.
-        ENDIF.
-      CATCH cx_sy_dyn_call_error INTO DATA(lx_imp1_dyn).
-        lv_imp1_msg = |IMPORT.A dyn-call: { lx_imp1_dyn->get_text( ) }|.
-      CATCH cx_root INTO DATA(lx_imp1).
-        lv_imp1_msg = |IMPORT.A exception: { lx_imp1->get_text( ) }|.
-    ENDTRY.
-
-    " Variant B: iv_system + iv_request + iv_client (no monitor)
-    TRY.
-        CALL FUNCTION 'TMS_MGR_IMPORT_TR_REQUEST'
-          EXPORTING
-            iv_system  = lv_target
-            iv_request = lv_trkorr
-            iv_client  = lv_client
-          EXCEPTIONS
-            OTHERS     = 99.
-        IF sy-subrc = 0.
-          cv_ok   = abap_true.
-          cv_msg  = |Added { lv_trkorr } to buffer of { lv_target }/{ lv_client } (via IMPORT/iv_request)|.
-          RETURN.
-        ELSE.
-          lv_imp2_msg = |IMPORT.B rc={ sy-subrc }|.
-        ENDIF.
-      CATCH cx_sy_dyn_call_error INTO DATA(lx_imp2_dyn).
-        lv_imp2_msg = |IMPORT.B dyn-call: { lx_imp2_dyn->get_text( ) }|.
-      CATCH cx_root INTO DATA(lx_imp2).
-        lv_imp2_msg = |IMPORT.B exception: { lx_imp2->get_text( ) }|.
-    ENDTRY.
-
-    lv_import_msg = |[A] { lv_imp1_msg } [B] { lv_imp2_msg }|.
-  ELSE.
-    lv_import_msg = 'IMPORT FM not present'.
-  ENDIF.
-
-  " --- Attempt 2 (fallback): TMS_MGR_FORWARD_TR_REQUEST ---
   CALL FUNCTION 'FUNCTION_EXISTS'
     EXPORTING
       funcname           = 'TMS_MGR_FORWARD_TR_REQUEST'
@@ -3088,20 +3035,46 @@ FORM add_to_stms_buffer USING iv_trkorr  TYPE clike
       function_not_exist = 1
       OTHERS             = 2.
   IF sy-subrc <> 0.
-    cv_msg = |Neither TMS_MGR_IMPORT_TR_REQUEST nor TMS_MGR_FORWARD_TR_REQUEST is available. ({ lv_import_msg })|.
+    cv_msg = 'TMS_MGR_FORWARD_TR_REQUEST is not available on this system.'.
     RETURN.
   ENDIF.
 
-  " TMS_MGR_FORWARD_TR_REQUEST signatures vary by release:
-  "  - Most releases: IV_REQUEST + IV_TARGET (TMSSYSNAM)
-  "  - Some legacy releases: IV_REQUEST + IV_TARGET_SYSTEM
-  " We try IV_TARGET first; if that fails (cx_sy_dyn_call_error of any
-  " kind), fall back to IV_TARGET_SYSTEM. Optional client param is omitted
-  " entirely — its name varies (IV_TAR_CLI, IV_CLIENT, IV_TARGET_CLIENT)
-  " and TMS routes by RFC destination anyway.
-  DATA: lv_fwd1_msg TYPE string,
-        lv_fwd2_msg TYPE string.
+  " --- Attempt 1: full signature (verified working on customer system) ---
+  TRY.
+      CALL FUNCTION 'TMS_MGR_FORWARD_TR_REQUEST'
+        EXPORTING
+          iv_request      = lv_trkorr
+          iv_target       = lv_target
+          iv_tarcli       = lv_client
+          iv_import_again = 'X'
+        EXCEPTIONS
+          read_config_failed         = 1
+          table_of_requests_is_empty = 2
+          OTHERS                     = 3.
+      CASE sy-subrc.
+        WHEN 0.
+          cv_ok  = abap_true.
+          cv_msg = |Added { lv_trkorr } to STMS buffer of { lv_target }/{ lv_client }|.
+          RETURN.
+        WHEN 1.
+          cv_msg = |TMS configuration read failed for target { lv_target } - check TMS routing in STMS.|.
+          RETURN.
+        WHEN 2.
+          cv_msg = |Empty request list for { lv_trkorr } - transport not found in TMS.|.
+          RETURN.
+        WHEN OTHERS.
+          lv_diag = |FORWARD rc={ sy-subrc } (target { lv_target }/{ lv_client })|.
+      ENDCASE.
+    CATCH cx_sy_dyn_call_error INTO DATA(lx_dyn).
+      " Older release lacks one of the params (iv_tarcli / iv_import_again).
+      " Fall back to minimal signature below.
+      lv_diag = |dyn-call mismatch on full signature: { lx_dyn->get_text( ) }|.
+    CATCH cx_root INTO DATA(lx_root).
+      cv_msg = |FORWARD exception: { lx_root->get_text( ) }|.
+      RETURN.
+  ENDTRY.
 
+  " --- Attempt 2 (legacy): minimal IV_REQUEST + IV_TARGET only ---
   TRY.
       CALL FUNCTION 'TMS_MGR_FORWARD_TR_REQUEST'
         EXPORTING
@@ -3111,45 +3084,19 @@ FORM add_to_stms_buffer USING iv_trkorr  TYPE clike
           OTHERS     = 99.
       IF sy-subrc = 0.
         cv_ok  = abap_true.
-        cv_msg = |FORWARD/IV_TARGET reported OK for { lv_trkorr } -> { lv_target }. | &&
-                 |WARNING: FORWARD only adds to buffer when a TMS route exists. | &&
-                 |Verify in STMS Imports of { lv_target }. IMPORT errors: { lv_import_msg }|.
+        cv_msg = |Added { lv_trkorr } to STMS buffer of { lv_target } | &&
+                 |(via legacy minimal signature - verify client target in STMS).|.
         RETURN.
       ELSE.
-        lv_fwd1_msg = |IV_TARGET rc={ sy-subrc }|.
-      ENDIF.
-    CATCH cx_sy_dyn_call_error INTO DATA(lx_fwd1_dyn).
-      lv_fwd1_msg = |IV_TARGET dyn-call: { lx_fwd1_dyn->get_text( ) }|.
-    CATCH cx_root INTO DATA(lx_fwd1).
-      lv_fwd1_msg = |IV_TARGET exception: { lx_fwd1->get_text( ) }|.
-  ENDTRY.
-
-  " Legacy fallback signature
-  TRY.
-      CALL FUNCTION 'TMS_MGR_FORWARD_TR_REQUEST'
-        EXPORTING
-          iv_request       = lv_trkorr
-          iv_target_system = lv_target
-        EXCEPTIONS
-          OTHERS           = 99.
-      IF sy-subrc = 0.
-        cv_ok  = abap_true.
-        cv_msg = |FORWARD/IV_TARGET_SYSTEM (legacy) reported OK for { lv_trkorr } -> { lv_target }. | &&
-                 |WARNING: verify in STMS Imports of { lv_target }. IMPORT errors: { lv_import_msg }|.
+        cv_msg = |FORWARD failed for { lv_trkorr } -> { lv_target }. | &&
+                 |Full signature: { lv_diag }. Legacy minimal: rc={ sy-subrc }. | &&
+                 |Check S_CTS_ADMI/IMPS and TMS routing.|.
         RETURN.
-      ELSE.
-        lv_fwd2_msg = |IV_TARGET_SYSTEM rc={ sy-subrc }|.
       ENDIF.
-    CATCH cx_sy_dyn_call_error INTO DATA(lx_fwd2_dyn).
-      lv_fwd2_msg = |IV_TARGET_SYSTEM dyn-call: { lx_fwd2_dyn->get_text( ) }|.
-    CATCH cx_root INTO DATA(lx_fwd2).
-      lv_fwd2_msg = |IV_TARGET_SYSTEM exception: { lx_fwd2->get_text( ) }|.
+    CATCH cx_root INTO DATA(lx_legacy).
+      cv_msg = |FORWARD failed (both signatures) for { lv_trkorr }. | &&
+               |Full: { lv_diag }. Legacy: { lx_legacy->get_text( ) }.|.
   ENDTRY.
-
-  cv_msg = |Both FORWARD signatures failed for { lv_trkorr } (target { lv_target }). | &&
-           |[1] { lv_fwd1_msg } | &&
-           |[2] { lv_fwd2_msg } | &&
-           |IMPORT: { lv_import_msg }. Check S_CTS_ADMI/IMPS and TMS configuration.|.
 ENDFORM.
 
 *--- EXECUTE STMS BUFFER ADD (multiple transports) ---*
