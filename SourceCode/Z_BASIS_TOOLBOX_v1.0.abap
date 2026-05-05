@@ -3046,7 +3046,20 @@ FORM add_to_stms_buffer USING iv_trkorr  TYPE clike
     RETURN.
   ENDIF.
 
-  " --- Attempt 1: full signature (verified working on customer system) ---
+  " --- Attempt 1: full signature with tp diagnostic capture ---
+  " Same parameters as the customer's verified working report. Also
+  " capture EV_TP_RET_CODE / ALOG / SLOG / TT_STDOUT so we can see
+  " whether tp actually queued the request or the FM just returned 0
+  " without doing anything.
+  DATA: lv_tp_rc    TYPE c LENGTH 4,
+        lv_tp_alog  TYPE string,
+        lv_tp_slog  TYPE string,
+        lt_stdout   TYPE STANDARD TABLE OF string,
+        lv_stdout1  TYPE string,
+        lv_stdout2  TYPE string,
+        lv_alog_msg TYPE string,
+        lv_audit    TYPE string.
+
   TRY.
       CALL FUNCTION 'TMS_MGR_FORWARD_TR_REQUEST'
         EXPORTING
@@ -3054,26 +3067,45 @@ FORM add_to_stms_buffer USING iv_trkorr  TYPE clike
           iv_target       = lv_target
           iv_tarcli       = lv_client
           iv_import_again = 'X'
+        IMPORTING
+          ev_tp_ret_code  = lv_tp_rc
+          ev_tp_alog      = lv_tp_alog
+          ev_tp_slog      = lv_tp_slog
+        TABLES
+          tt_stdout       = lt_stdout
         EXCEPTIONS
           read_config_failed         = 1
           table_of_requests_is_empty = 2
           OTHERS                     = 3.
+
+      " Always log the diagnostic, even on success — buffer entries
+      " sometimes show up under different filtering in STMS.
+      READ TABLE lt_stdout INTO lv_stdout1 INDEX 1.
+      READ TABLE lt_stdout INTO lv_stdout2 INDEX lines( lt_stdout ).
+      lv_audit = |sy-subrc={ sy-subrc } tp_rc=[{ lv_tp_rc }] | &&
+                 |alog=[{ lv_tp_alog }] slog=[{ lv_tp_slog }] | &&
+                 |stdout_lines={ lines( lt_stdout ) } | &&
+                 |first=[{ lv_stdout1 }] last=[{ lv_stdout2 }]|.
+      PERFORM write_audit_log USING c_mod_stm 'TP_DIAG' lv_trkorr lv_audit 'I'.
+
+      lv_alog_msg = |tp_rc={ lv_tp_rc } alog=[{ lv_tp_alog }]|.
+
       CASE sy-subrc.
         WHEN 0.
           cv_ok  = abap_true.
-          cv_msg = |Added { lv_trkorr } to STMS buffer of { lv_target }/{ lv_client }|.
+          cv_msg = |FORWARD called for { lv_trkorr } -> { lv_target }/{ lv_client }. { lv_alog_msg }. Verify in STMS Imports of { lv_target }; details in audit log (action TP_DIAG).|.
           RETURN.
         WHEN 1.
-          cv_msg = |TMS configuration read failed for target { lv_target } - check TMS routing in STMS.|.
+          cv_msg = |TMS configuration read failed for target { lv_target } - check TMS routing in STMS. { lv_alog_msg }|.
           RETURN.
         WHEN 2.
-          cv_msg = |Empty request list for { lv_trkorr } - transport not found in TMS.|.
+          cv_msg = |Empty request list for { lv_trkorr } - transport not found in TMS. { lv_alog_msg }|.
           RETURN.
         WHEN OTHERS.
-          lv_diag = |FORWARD rc={ sy-subrc } (target { lv_target }/{ lv_client })|.
+          lv_diag = |FORWARD rc={ sy-subrc } (target { lv_target }/{ lv_client }) { lv_alog_msg }|.
       ENDCASE.
     CATCH cx_sy_dyn_call_error INTO DATA(lx_dyn).
-      " Older release lacks one of the params (iv_tarcli / iv_import_again).
+      " Older release lacks one of the params or returns different IMPORTING types.
       " Fall back to minimal signature below.
       lv_diag = |dyn-call mismatch on full signature: { lx_dyn->get_text( ) }|.
     CATCH cx_root INTO DATA(lx_root).
