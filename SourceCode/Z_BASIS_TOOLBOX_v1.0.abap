@@ -2928,9 +2928,16 @@ FORM parse_trkorr_from_k USING iv_path TYPE string
 
   CLEAR cv_trkorr.
 
+  " Step 0 - trim leading/trailing whitespace. Selection-screen file
+  " parameters are TYPE c (fixed length, e.g. rlgrap-filename); the
+  " trailing CHAR padding survives the cast to TYPE string and would
+  " end up in the last SPLIT segment, breaking the SID length check.
+  lv_norm = iv_path.
+  SHIFT lv_norm LEFT  DELETING LEADING  space.
+  SHIFT lv_norm RIGHT DELETING TRAILING space.
+
   " Step 1 - strip directory: normalize backslashes to forward slashes,
   " then keep the last non-empty segment after splitting at '/'.
-  lv_norm = iv_path.
   REPLACE ALL OCCURRENCES OF '\' IN lv_norm WITH '/'.
   SPLIT lv_norm AT '/' INTO TABLE lt_seg.
   LOOP AT lt_seg INTO lv_seg.
