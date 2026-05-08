@@ -2,7 +2,7 @@
 
 A single-file ABAP report that gives SAP Basis administrators in **SAP Private Cloud** environments the operational tools they normally reach for via OS shell — without direct OS access.
 
-> **Version:** 1.0 RC1
+> **Version:** 1.0 RC2
 
 ## Why
 
